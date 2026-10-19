@@ -19,7 +19,12 @@ export interface HealthStatus {
   environment: string;
   service: string;
   version: string;
+  database?: 'connected' | 'disconnected' | 'connecting' | 'disconnecting';
 }
 
 // User roles in the Dwellio platform
 export type UserRole = 'customer' | 'provider' | 'admin';
+
+// Provider verification status
+export type ProviderVerificationStatus = 'pending' | 'approved' | 'rejected';
+

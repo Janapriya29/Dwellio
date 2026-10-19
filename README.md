@@ -10,7 +10,8 @@ Dwellio is a modern full-stack home-services platform that connects homeowners w
 
 * **Frontend**: React 18, TypeScript, Vite, Tailwind CSS
 * **Backend**: Node.js, Express, TypeScript
-* **Database**: MongoDB (via Mongoose — integrated in Phase 2)
+* **Database**: MongoDB with Mongoose (configured for local dev: `mongodb://localhost:27017/dwellio`)
+* **Testing**: Vitest and Supertest
 * **Workspace Management**: npm workspaces monorepo
 * **Design Tokens**:
   * Deep Teal: `#172B35`
@@ -25,14 +26,21 @@ Dwellio is a modern full-stack home-services platform that connects homeowners w
 Dwellio/
 ├── apps/
 │   ├── frontend/         # Client web application (Vite + React + Tailwind)
-│   └── backend/          # REST API server (Express + TypeScript)
+│   └── backend/          # REST API server (Express + TypeScript + Mongoose)
 ├── packages/
-│   └── shared/           # Common TypeScript types and contracts
+│   └── shared/           # Common TypeScript types, enums, and contracts
 ├── tests/
 │   └── e2e/              # Playwright E2E tests (Phase 7)
-├── docs/                 # Architectural specifications
+├── docs/                 # Architectural & database specifications
 └── .github/              # Automation workflows
 ```
+
+---
+
+## 🗄️ Database Models (Phase 2 Foundation)
+
+* **`User`**: Account identity supporting `name`, normalized unique `email`, required `passwordHash`, `role` (`customer`, `provider`, `admin`), `isActive`, and timestamps.
+* **`ProviderProfile`**: Extended provider data linked 1-to-1 with `User` via unique `userId`, storing `displayName`, `phone`, `serviceArea`, `skills` array, `verificationStatus` (`pending`, `approved`, `rejected`), and timestamps.
 
 ---
 
@@ -55,7 +63,13 @@ Compile shared types and build the workspaces:
 npm run build
 ```
 
-### 4. Running the Development Servers
+### 4. Running Automated Tests
+Run model validation and integration test suites via Vitest:
+```bash
+npm test
+```
+
+### 5. Running the Development Servers
 
 Run backend and frontend concurrently:
 ```bash
@@ -71,6 +85,7 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
-### 5. Verification Endpoints
+### 6. Health & Verification Endpoints
 * **Frontend Home**: [http://localhost:5173](http://localhost:5173)
-* **Backend Health Check**: [http://localhost:5000/api/health](http://localhost:5000/api/health)
+* **General API Health**: [http://localhost:5000/api/health](http://localhost:5000/api/health)
+* **Database Readiness**: [http://localhost:5000/api/health/db](http://localhost:5000/api/health/db) (returns HTTP 200 when connected, HTTP 503 if disconnected)
