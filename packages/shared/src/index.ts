@@ -80,4 +80,50 @@ export interface PaginationMeta {
   totalPages: number;
 }
 
+// Supported house rooms from interactive cutaway
+export type HouseRoom = 'roof' | 'bath' | 'living' | 'kitchen' | 'garden';
+
+// Service Category
+export interface CategoryData {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  icon?: string;
+  rooms: string[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Service Offering under a Category
+export interface ServiceData {
+  id: string;
+  categoryId: string;
+  name: string;
+  slug: string;
+  description?: string;
+  icon?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Public Service Provider DTO for Discovery
+export interface PublicProviderData {
+  id: string;
+  userId: string;
+  displayName: string;
+  phone: string;
+  serviceArea: string;
+  skills: string[];
+  verificationStatus: ProviderVerificationStatus;
+  user?: {
+    name: string;
+    email: string;
+  };
+  createdAt: string;
+}
+
+
 

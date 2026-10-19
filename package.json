@@ -16,8 +16,9 @@
     "build:backend": "npm run build --workspace=apps/backend",
     "build:frontend": "npm run build --workspace=apps/frontend",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspace=apps/backend",
-    "seed:admin": "npm run seed:admin --workspace=apps/backend"
+    "test": "npm run test --workspace=apps/backend && npm run test --workspace=apps/frontend",
+    "seed:admin": "npm run seed:admin --workspace=apps/backend",
+    "seed:catalog": "npm run seed:catalog --workspace=apps/backend"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

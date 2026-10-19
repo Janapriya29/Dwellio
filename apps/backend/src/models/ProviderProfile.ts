@@ -7,6 +7,7 @@ export interface IProviderProfile extends Document {
   phone: string;
   serviceArea: string;
   skills: string[];
+  categories?: Types.ObjectId[];
   verificationStatus: ProviderVerificationStatus;
   rejectionReason?: string;
   reviewedBy?: Types.ObjectId;
@@ -49,6 +50,12 @@ const providerProfileSchema = new Schema<IProviderProfile>(
       type: [String],
       default: [],
     },
+    categories: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: 'Category',
+      },
+    ],
     verificationStatus: {
       type: String,
       enum: {
