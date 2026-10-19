@@ -94,30 +94,32 @@ const MainLayout: React.FC = () => {
               <span className="text-dwellio-teal/60 capitalize">{user?.role || 'Guest'}</span>
             </div>
 
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  switchDemoRole('customer');
-                  setActiveTab('my-bookings');
-                }}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white border border-dwellio-mint/80 hover:bg-dwellio-mint/20 text-dwellio-teal transition"
-                title="Switch to Customer session (Pooja Sharma)"
-              >
-                Customer
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  switchDemoRole('karthik');
-                  setActiveTab('provider-portal');
-                }}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white border border-dwellio-mint/80 hover:bg-dwellio-mint/20 text-dwellio-teal transition"
-                title="Switch to Provider session (Karthik Raja)"
-              >
-                Provider
-              </button>
-            </div>
+            {import.meta.env.DEV && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    switchDemoRole('customer');
+                    setActiveTab('my-bookings');
+                  }}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white border border-dwellio-mint/80 hover:bg-dwellio-mint/20 text-dwellio-teal transition"
+                  title="Switch to Customer session (Pooja Sharma)"
+                >
+                  Customer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    switchDemoRole('karthik');
+                    setActiveTab('provider-portal');
+                  }}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white border border-dwellio-mint/80 hover:bg-dwellio-mint/20 text-dwellio-teal transition"
+                  title="Switch to Provider session (Karthik Raja)"
+                >
+                  Provider
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>

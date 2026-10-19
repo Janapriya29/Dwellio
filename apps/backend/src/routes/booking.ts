@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth, requireApprovedProvider } from '../middleware/auth';
+import { bookingCreationRateLimiter } from '../middleware/rateLimiter';
 import {
   createBooking,
   getCustomerBookings,
@@ -19,7 +20,7 @@ export const bookingRouter = Router();
 // ----------------------------------------------------
 // Customer Booking Endpoints
 // ----------------------------------------------------
-bookingRouter.post('/bookings', requireAuth, createBooking);
+bookingRouter.post('/bookings', requireAuth, bookingCreationRateLimiter, createBooking);
 bookingRouter.get('/bookings', requireAuth, getCustomerBookings);
 bookingRouter.get('/bookings/:id', requireAuth, getCustomerBookingById);
 bookingRouter.patch('/bookings/:id/cancel', requireAuth, cancelCustomerBooking);

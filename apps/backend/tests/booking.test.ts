@@ -7,6 +7,7 @@ import { ProviderProfile } from '../src/models/ProviderProfile';
 import { Category } from '../src/models/Category';
 import { Service } from '../src/models/Service';
 import { Booking } from '../src/models/Booking';
+import { SlotReservation } from '../src/models/SlotReservation';
 import { connectTestDb, clearTestDb, disconnectTestDb } from './setup';
 import { generateToken } from '../src/utils/auth';
 
@@ -40,6 +41,7 @@ describe('Phase 6: Booking Lifecycle & Service Scheduling Tests', () => {
     await Category.syncIndexes();
     await Service.syncIndexes();
     await Booking.syncIndexes();
+    await SlotReservation.syncIndexes();
   });
 
   afterAll(async () => {
@@ -302,6 +304,51 @@ describe('Phase 6: Booking Lifecycle & Service Scheduling Tests', () => {
       expect(res.status).toBe(400);
       expect(res.body.message).toContain('own service provider profile');
     });
+
+    it('should enforce rate limit on POST /api/bookings and return 429 when threshold is exceeded', async () => {
+      const rateLimitUser = await new User({
+        name: 'Rapid Booker',
+        email: 'rapid@example.com',
+        passwordHash: 'dummy_hash',
+        role: 'customer',
+        isActive: true,
+      }).save();
+      const rateLimitToken = generateToken({ userId: rateLimitUser._id.toString(), role: 'customer' });
+
+      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const start = new Date(tomorrow.setHours(10, 0, 0, 0)).toISOString();
+      const end = new Date(tomorrow.setHours(11, 0, 0, 0)).toISOString();
+
+      // Submit 15 requests (the limit)
+      for (let i = 0; i < 15; i++) {
+        await request(app)
+          .post('/api/bookings')
+          .set('Authorization', `Bearer ${rateLimitToken}`)
+          .send({
+            serviceId: activeService._id.toString(),
+            providerId: approvedProfile._id.toString(),
+            scheduledStartTime: start,
+            scheduledEndTime: end,
+            address: { street: `${i} Test Way`, city: 'Metro City' },
+          });
+      }
+
+      // 16th request must exceed the threshold and receive 429
+      const exceededRes = await request(app)
+        .post('/api/bookings')
+        .set('Authorization', `Bearer ${rateLimitToken}`)
+        .send({
+          serviceId: activeService._id.toString(),
+          providerId: approvedProfile._id.toString(),
+          scheduledStartTime: start,
+          scheduledEndTime: end,
+          address: { street: '16 Test Way', city: 'Metro City' },
+        });
+
+      expect(exceededRes.status).toBe(429);
+      expect(exceededRes.body.success).toBe(false);
+      expect(exceededRes.body.message).toContain('Too many booking requests');
+    });
   });
 
   describe('2. Schedule Conflict Prevention & Overlap Logic', () => {
@@ -422,6 +469,184 @@ describe('Phase 6: Booking Lifecycle & Service Scheduling Tests', () => {
       // Verify status remains requested
       const refreshed = await Booking.findById(booking2._id);
       expect(refreshed?.status).toBe('requested');
+    });
+
+    it('should handle simultaneous overlapping acceptance attempts with true concurrency and accept exactly one', async () => {
+      const day = new Date(Date.now() + 48 * 60 * 60 * 1000);
+      const start1 = new Date(day.setHours(10, 0, 0, 0));
+      const end1 = new Date(day.setHours(12, 0, 0, 0));
+
+      const start2 = new Date(day.setHours(11, 0, 0, 0));
+      const end2 = new Date(day.setHours(13, 0, 0, 0));
+
+      const b1 = await new Booking({
+        customerId: customerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start1,
+        scheduledEndTime: end1,
+        address: { street: '10 Alpha Way', city: 'Metro City' },
+        status: 'requested',
+      }).save();
+
+      const b2 = await new Booking({
+        customerId: secondCustomerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start2,
+        scheduledEndTime: end2,
+        address: { street: '20 Beta Road', city: 'Metro City' },
+        status: 'requested',
+      }).save();
+
+      // Fire simultaneous overlapping acceptances
+      const [res1, res2] = await Promise.all([
+        request(app)
+          .patch(`/api/provider/bookings/${b1._id}/accept`)
+          .set('Authorization', `Bearer ${providerToken}`),
+        request(app)
+          .patch(`/api/provider/bookings/${b2._id}/accept`)
+          .set('Authorization', `Bearer ${providerToken}`),
+      ]);
+
+      const statuses = [res1.status, res2.status].sort();
+      expect(statuses).toEqual([200, 409]);
+
+      const acceptedBookings = await Booking.find({
+        _id: { $in: [b1._id, b2._id] },
+        status: 'accepted',
+      });
+      const requestedBookings = await Booking.find({
+        _id: { $in: [b1._id, b2._id] },
+        status: 'requested',
+      });
+
+      expect(acceptedBookings).toHaveLength(1);
+      expect(requestedBookings).toHaveLength(1);
+
+      // Verify slot reservations exist only for the accepted booking
+      const reservations = await SlotReservation.find({
+        bookingId: { $in: [b1._id, b2._id] },
+      });
+      expect(reservations.length).toBeGreaterThan(0);
+      expect(reservations.every((r) => r.bookingId.toString() === acceptedBookings[0]._id.toString())).toBe(true);
+    });
+
+    it('should successfully accept non-overlapping adjacent appointments for the same provider without conflict', async () => {
+      const day = new Date(Date.now() + 72 * 60 * 60 * 1000);
+      // Appointment 1: 09:00 - 11:00
+      const start1 = new Date(day.setHours(9, 0, 0, 0));
+      const end1 = new Date(day.setHours(11, 0, 0, 0));
+      // Appointment 2: 11:00 - 13:00 (starts exactly when 1 ends)
+      const start2 = new Date(day.setHours(11, 0, 0, 0));
+      const end2 = new Date(day.setHours(13, 0, 0, 0));
+
+      const adj1 = await new Booking({
+        customerId: customerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start1,
+        scheduledEndTime: end1,
+        address: { street: '110 Park Street', city: 'Metro City' },
+        status: 'requested',
+      }).save();
+
+      const adj2 = await new Booking({
+        customerId: secondCustomerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start2,
+        scheduledEndTime: end2,
+        address: { street: '112 Park Street', city: 'Metro City' },
+        status: 'requested',
+      }).save();
+
+      const accept1 = await request(app)
+        .patch(`/api/provider/bookings/${adj1._id}/accept`)
+        .set('Authorization', `Bearer ${providerToken}`);
+      expect(accept1.status).toBe(200);
+      expect(accept1.body.data.status).toBe('accepted');
+
+      const accept2 = await request(app)
+        .patch(`/api/provider/bookings/${adj2._id}/accept`)
+        .set('Authorization', `Bearer ${providerToken}`);
+      expect(accept2.status).toBe(200);
+      expect(accept2.body.data.status).toBe('accepted');
+
+      const bothAccepted = await Booking.find({
+        _id: { $in: [adj1._id, adj2._id] },
+        status: 'accepted',
+      });
+      expect(bothAccepted).toHaveLength(2);
+    });
+
+    it('should release slot reservations when provider cancels an accepted booking', async () => {
+      const day = new Date(Date.now() + 96 * 60 * 60 * 1000);
+      const start = new Date(day.setHours(14, 0, 0, 0));
+      const end = new Date(day.setHours(16, 0, 0, 0));
+
+      const b = await new Booking({
+        customerId: customerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start,
+        scheduledEndTime: end,
+        address: { street: '55 Hill Road', city: 'Metro City' },
+        status: 'requested',
+      }).save();
+
+      // Accept first
+      const acceptRes = await request(app)
+        .patch(`/api/provider/bookings/${b._id}/accept`)
+        .set('Authorization', `Bearer ${providerToken}`);
+      expect(acceptRes.status).toBe(200);
+
+      // Verify reservations created
+      const reservationsBefore = await SlotReservation.find({ bookingId: b._id });
+      expect(reservationsBefore.length).toBeGreaterThan(0);
+
+      // Provider cancels from accepted
+      const cancelRes = await request(app)
+        .patch(`/api/provider/bookings/${b._id}/status`)
+        .set('Authorization', `Bearer ${providerToken}`)
+        .send({ status: 'cancelled', reason: 'Emergency equipment repair' });
+
+      expect(cancelRes.status).toBe(200);
+      expect(cancelRes.body.data.status).toBe('cancelled');
+      expect(cancelRes.body.data.cancellationReason).toBe('Emergency equipment repair');
+
+      // Verify reservations released
+      const reservationsAfter = await SlotReservation.find({ bookingId: b._id });
+      expect(reservationsAfter).toHaveLength(0);
+
+      // Now another booking in the same slot can be accepted
+      const newBooking = await new Booking({
+        customerId: secondCustomerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start,
+        scheduledEndTime: end,
+        address: { street: '56 Hill Road', city: 'Metro City' },
+        status: 'requested',
+      }).save();
+
+      const newAcceptRes = await request(app)
+        .patch(`/api/provider/bookings/${newBooking._id}/accept`)
+        .set('Authorization', `Bearer ${providerToken}`);
+      expect(newAcceptRes.status).toBe(200);
+      expect(newAcceptRes.body.data.status).toBe('accepted');
     });
   });
 

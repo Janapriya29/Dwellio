@@ -15,36 +15,40 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const DEMO_CREDENTIALS = {
-  customer: {
-    name: 'Pooja Sharma (Customer)',
-    email: 'customer@example.com',
-    password: 'DemoCustomer2026!',
-    role: 'customer' as const,
-  },
-  karthik: {
-    name: 'Karthik Raja (Roofing Provider)',
-    email: 'karthik.roofing@example.com',
-    password: 'DemoProvider2026!',
-    role: 'provider' as const,
-  },
-  naveen: {
-    name: 'Naveen Kumar (Electrical Provider)',
-    email: 'naveen.electrical@example.com',
-    password: 'DemoProvider2026!',
-    role: 'provider' as const,
-  },
-};
+export const DEMO_CREDENTIALS = import.meta.env.DEV
+  ? {
+      customer: {
+        name: 'Pooja Sharma (Customer)',
+        email: 'customer@example.com',
+        password: 'DemoCustomer2026!',
+        role: 'customer' as const,
+      },
+      karthik: {
+        name: 'Karthik Raja (Roofing Provider)',
+        email: 'karthik.roofing@example.com',
+        password: 'DemoProvider2026!',
+        role: 'provider' as const,
+      },
+      naveen: {
+        name: 'Naveen Kumar (Electrical Provider)',
+        email: 'naveen.electrical@example.com',
+        password: 'DemoProvider2026!',
+        role: 'provider' as const,
+      },
+    }
+  : undefined;
 
-const DEFAULT_CUSTOMER_USER: SafeUser = {
-  id: 'demo-customer-id',
-  name: 'Pooja Sharma',
-  email: 'customer@example.com',
-  role: 'customer',
-  isActive: true,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-};
+const DEFAULT_CUSTOMER_USER: SafeUser | null = import.meta.env.DEV
+  ? {
+      id: 'demo-customer-id',
+      name: 'Pooja Sharma',
+      email: 'customer@example.com',
+      role: 'customer',
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+  : null;
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<SafeUser | null>(() => {
@@ -52,7 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return saved ? JSON.parse(saved) : DEFAULT_CUSTOMER_USER;
   });
   const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem('dwellio_token') || 'demo-customer-token';
+    return localStorage.getItem('dwellio_token') || (import.meta.env.DEV ? 'demo-customer-token' : null);
   });
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -91,7 +95,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const switchDemoRole = useCallback(async (roleKey: 'customer' | 'karthik' | 'naveen'): Promise<void> => {
+    if (!import.meta.env.DEV || !DEMO_CREDENTIALS) {
+      console.warn('Demo persona switching is disabled in production.');
+      return;
+    }
     const creds = DEMO_CREDENTIALS[roleKey];
+    if (!creds) return;
     try {
       await login(creds.email, creds.password);
     } catch {
@@ -109,9 +118,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Initialize with demo customer if no session exists
+  // Initialize with demo customer in development mode if no session exists
   useEffect(() => {
-    if (!token) {
+    if (import.meta.env.DEV && !token) {
       switchDemoRole('customer').catch(() => {});
     }
   }, [token, switchDemoRole]);

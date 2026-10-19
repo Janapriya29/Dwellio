@@ -98,4 +98,52 @@ describe('BookingModal Component', () => {
       expect(screen.getByRole('button', { name: /done & view bookings/i })).toBeInTheDocument();
     });
   });
+
+  it('correctly converts local appointment selection to UTC ISO 8601 without unwanted timezone shift', async () => {
+    vi.mocked(bookingService.createBooking).mockResolvedValue({
+      id: 'book-timezone-test',
+      customerId: 'cust-1',
+      providerId: 'pro-1',
+      providerUserId: 'user-1',
+      serviceId: 'srv-1',
+      categoryId: 'cat-1',
+      scheduledStartTime: '2026-10-25T03:30:00.000Z',
+      scheduledEndTime: '2026-10-25T05:30:00.000Z',
+      address: { street: '42 Palm Ave', city: 'Chennai' },
+      status: 'requested',
+      statusHistory: [],
+      createdAt: '2026-10-19T00:00:00.000Z',
+      updatedAt: '2026-10-19T00:00:00.000Z',
+    });
+
+    render(
+      <AuthProvider>
+        <BookingModal
+          isOpen={true}
+          provider={mockProvider}
+          services={mockServices}
+          selectedRoom="roof"
+          onClose={vi.fn()}
+        />
+      </AuthProvider>
+    );
+
+    const dateInput = screen.getByLabelText(/appointment date/i);
+    fireEvent.change(dateInput, { target: { value: '2026-11-15' } });
+
+    const submitBtn = screen.getByRole('button', { name: /confirm & request booking/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(bookingService.createBooking).toHaveBeenCalledTimes(1);
+    });
+
+    // Verify local Date was converted to ISO string
+    const callArgs = vi.mocked(bookingService.createBooking).mock.calls[0][0];
+    const expectedLocalStart = new Date(2026, 10, 15, 9, 0, 0, 0).toISOString();
+    const expectedLocalEnd = new Date(2026, 10, 15, 11, 0, 0, 0).toISOString();
+
+    expect(callArgs.scheduledStartTime).toBe(expectedLocalStart);
+    expect(callArgs.scheduledEndTime).toBe(expectedLocalEnd);
+  });
 });

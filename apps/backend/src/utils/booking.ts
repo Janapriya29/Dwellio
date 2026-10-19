@@ -1,6 +1,7 @@
 import mongoose, { Types } from 'mongoose';
 import { BookingData, BookingStatusHistoryEntry } from '@dwellio/shared';
 import { Booking, IBooking } from '../models/Booking';
+import { SlotReservation } from '../models/SlotReservation';
 
 export const RESERVED_STATUSES = ['accepted', 'on_the_way', 'in_progress'] as const;
 
@@ -106,4 +107,82 @@ export const findConflictingProviderBooking = async (
   }
 
   return Booking.findOne(query);
+};
+
+export const BUCKET_MINUTES = 15;
+export const BUCKET_MS = BUCKET_MINUTES * 60 * 1000;
+
+/**
+ * Computes all 15-minute discrete slot boundary timestamps that intersect the given interval [startTime, endTime).
+ * Half-open interval convention [start, end) ensures that non-overlapping adjacent appointments
+ * (e.g. 09:00–11:00 and 11:00–13:00) share zero slot timestamps.
+ */
+export const generateSlotTimes = (startTime: Date, endTime: Date): Date[] => {
+  const startMs = startTime.getTime();
+  const endMs = endTime.getTime();
+  const firstSlotMs = Math.floor(startMs / BUCKET_MS) * BUCKET_MS;
+  const slots: Date[] = [];
+
+  for (let t = firstSlotMs; t < endMs; t += BUCKET_MS) {
+    if (t + BUCKET_MS > startMs && t < endMs) {
+      slots.push(new Date(t));
+    }
+  }
+
+  return slots;
+};
+
+/**
+ * Atomically reserves discrete slot locks for a provider and booking using MongoDB's unique index constraint.
+ * If another booking has concurrently reserved any overlapping slot, the insert will fail with duplicate key (E11000),
+ * safely rolling back any partial inserts and returning a conflict indication.
+ */
+export const acquireProviderSlots = async (
+  providerId: Types.ObjectId | string,
+  startTime: Date,
+  endTime: Date,
+  bookingId: Types.ObjectId | string
+): Promise<{ success: boolean; conflict?: boolean; error?: string }> => {
+  const pId = new Types.ObjectId(providerId.toString());
+  const bId = new Types.ObjectId(bookingId.toString());
+  const slotTimes = generateSlotTimes(startTime, endTime);
+
+  if (slotTimes.length === 0) {
+    return { success: false, error: 'Invalid scheduling window.' };
+  }
+
+  try {
+    const docs = slotTimes.map((slotTime) => ({
+      providerId: pId,
+      slotTime,
+      bookingId: bId,
+    }));
+
+    await SlotReservation.insertMany(docs, { ordered: true });
+    return { success: true };
+  } catch (err: any) {
+    const isDuplicate =
+      err.code === 11000 ||
+      err.name === 'MongoBulkWriteError' ||
+      (err.writeErrors && Array.isArray(err.writeErrors) && err.writeErrors.some((e: any) => e.code === 11000)) ||
+      (typeof err.message === 'string' && err.message.includes('E11000'));
+
+    // Release any slots partially inserted for this booking in this batch
+    await SlotReservation.deleteMany({ bookingId: bId });
+
+    if (isDuplicate) {
+      return { success: false, conflict: true };
+    }
+    throw err;
+  }
+};
+
+/**
+ * Releases all slot reservations associated with a booking (e.g. upon cancellation, completion, or decline).
+ */
+export const releaseProviderSlots = async (
+  bookingId: Types.ObjectId | string
+): Promise<void> => {
+  const bId = new Types.ObjectId(bookingId.toString());
+  await SlotReservation.deleteMany({ bookingId: bId });
 };

@@ -68,8 +68,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     const slot = TIME_SLOTS[selectedSlotIndex];
     const [year, month, day] = selectedDate.split('-').map(Number);
 
-    const startTime = new Date(Date.UTC(year, month - 1, day, slot.startHour, slot.startMin));
-    const endTime = new Date(Date.UTC(year, month - 1, day, slot.endHour, slot.endMin));
+    // Wall-clock time: construct local browser Date so appointment matches customer's selected time.
+    // .toISOString() will accurately convert this local instant into UTC ISO 8601 for backend storage.
+    const startTime = new Date(year, month - 1, day, slot.startHour, slot.startMin, 0, 0);
+    const endTime = new Date(year, month - 1, day, slot.endHour, slot.endMin, 0, 0);
 
     if (startTime.getTime() <= Date.now()) {
       setErrorMessage('The scheduled appointment window must be in the future.');

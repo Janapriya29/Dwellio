@@ -117,23 +117,25 @@ export const ProviderBookingsView: React.FC = () => {
         </div>
 
         {/* Demo Switcher Quick Buttons */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-dwellio-teal/60">Switch Provider:</span>
-          <button
-            type="button"
-            onClick={() => switchDemoRole('karthik')}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-dwellio-mint/80 text-dwellio-teal hover:bg-dwellio-ivory transition"
-          >
-            Karthik (Roofing)
-          </button>
-          <button
-            type="button"
-            onClick={() => switchDemoRole('naveen')}
-            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-dwellio-mint/80 text-dwellio-teal hover:bg-dwellio-ivory transition"
-          >
-            Naveen (Electrical)
-          </button>
-        </div>
+        {import.meta.env.DEV && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-dwellio-teal/60">Switch Provider:</span>
+            <button
+              type="button"
+              onClick={() => switchDemoRole('karthik')}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-dwellio-mint/80 text-dwellio-teal hover:bg-dwellio-ivory transition"
+            >
+              Karthik (Roofing)
+            </button>
+            <button
+              type="button"
+              onClick={() => switchDemoRole('naveen')}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-dwellio-mint/80 text-dwellio-teal hover:bg-dwellio-ivory transition"
+            >
+              Naveen (Electrical)
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Action Success Alert */}

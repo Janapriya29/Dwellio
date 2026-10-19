@@ -8,7 +8,12 @@ import {
   BookingStatus,
 } from '@dwellio/shared';
 import { Booking } from '../models/Booking';
-import { formatBookingDto, findConflictingProviderBooking } from '../utils/booking';
+import {
+  formatBookingDto,
+  findConflictingProviderBooking,
+  acquireProviderSlots,
+  releaseProviderSlots,
+} from '../utils/booking';
 
 /**
  * Valid allowed status transitions for service providers
@@ -169,7 +174,23 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // 2. Atomic state transition from 'requested' -> 'accepted'
+    // 2. Concurrency-safe slot reservation acquisition via unique compound index
+    const reservation = await acquireProviderSlots(
+      req.providerProfile._id,
+      booking.scheduledStartTime,
+      booking.scheduledEndTime,
+      booking._id
+    );
+
+    if (!reservation.success) {
+      res.status(409).json({
+        success: false,
+        message: 'Cannot accept booking: you already have an accepted or active job during this scheduled time slot.',
+      });
+      return;
+    }
+
+    // 3. Atomic state transition from 'requested' -> 'accepted'
     const updated = await Booking.findOneAndUpdate(
       {
         _id: booking._id,
@@ -197,31 +218,11 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
       .populate('categoryId', 'name slug');
 
     if (!updated) {
+      // Concurrently modified or cancelled: release acquired slot reservations
+      await releaseProviderSlots(booking._id);
       res.status(409).json({
         success: false,
         message: 'Booking was concurrently modified or already responded to.',
-      });
-      return;
-    }
-
-    // 3. Double-check for concurrent race-condition overlap
-    const raceConflict = await findConflictingProviderBooking(
-      req.providerProfile._id,
-      updated.scheduledStartTime,
-      updated.scheduledEndTime,
-      updated._id
-    );
-
-    if (raceConflict) {
-      // Revert this acceptance due to race condition
-      await Booking.findByIdAndUpdate(updated._id, {
-        $set: { status: 'requested' },
-        $pop: { statusHistory: 1 },
-      });
-
-      res.status(409).json({
-        success: false,
-        message: 'A schedule conflict occurred due to simultaneous booking acceptances. The slot is occupied.',
       });
       return;
     }
@@ -320,6 +321,9 @@ export const rejectBooking = async (req: Request, res: Response): Promise<void> 
       });
       return;
     }
+
+    // Release any associated slot reservations if present
+    await releaseProviderSlots(booking._id);
 
     const response: ApiResponse<BookingData> = {
       success: true,
@@ -426,6 +430,11 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
         message: 'Booking status was concurrently updated by another process. Please refresh.',
       });
       return;
+    }
+
+    // Release slot reservations on terminal completion or cancellation
+    if (targetStatus === 'cancelled' || targetStatus === 'completed') {
+      await releaseProviderSlots(booking._id);
     }
 
     const response: ApiResponse<BookingData> = {

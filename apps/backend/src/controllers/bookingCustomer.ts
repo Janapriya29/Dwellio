@@ -5,7 +5,7 @@ import { Booking } from '../models/Booking';
 import { Service } from '../models/Service';
 import { ProviderProfile } from '../models/ProviderProfile';
 import { User } from '../models/User';
-import { formatBookingDto, findConflictingProviderBooking } from '../utils/booking';
+import { formatBookingDto, findConflictingProviderBooking, releaseProviderSlots } from '../utils/booking';
 
 const MIN_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
@@ -411,6 +411,9 @@ export const cancelCustomerBooking = async (req: Request, res: Response): Promis
       });
       return;
     }
+
+    // Release slot reservations when customer cancels booking
+    await releaseProviderSlots(booking._id);
 
     const response: ApiResponse<BookingData> = {
       success: true,
