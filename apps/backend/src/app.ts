@@ -2,9 +2,10 @@ import express, { Application } from 'express';
 import cors from 'cors';
 import { config } from './config/env';
 import { healthRouter } from './routes/health';
+import { authRouter } from './routes/auth';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
 
-export const createApp = (): Application => {
+export const createApp = (customRouter?: express.Router): Application => {
   const app: Application = express();
 
   // Basic security and parsing middleware
@@ -19,6 +20,12 @@ export const createApp = (): Application => {
 
   // API Routes
   app.use('/api', healthRouter);
+  app.use('/api', authRouter);
+
+  // Optional custom router (used for testing or modular route injection)
+  if (customRouter) {
+    app.use('/api', customRouter);
+  }
 
   // Fallback 404 handler for unmatched routes
   app.use(notFoundHandler);

@@ -74,7 +74,7 @@ describe('ProviderProfile Model Validation & Constraints', () => {
     await expect(profile.validate()).rejects.toThrow();
   });
 
-  it('should enforce 1-to-1 constraint (only one provider profile per user)', async () => {
+  it('should enforce 1-to-1 constraint via MongoDB unique index on userId (E11000)', async () => {
     const user = await new User({
       name: 'Single Provider User',
       email: 'provider.unique@example.com',
@@ -97,6 +97,19 @@ describe('ProviderProfile Model Validation & Constraints', () => {
       serviceArea: 'South District',
     });
 
-    await expect(profile2.save()).rejects.toThrow();
+    // 1. Schema-level validation passes because schema alone cannot know user already has a profile
+    await expect(profile2.validate()).resolves.toBeUndefined();
+
+    // 2. Database save must be rejected by MongoDB's unique index on userId
+    let saveError: any;
+    try {
+      await profile2.save();
+    } catch (err) {
+      saveError = err;
+    }
+
+    expect(saveError).toBeDefined();
+    expect(saveError.code).toBe(11000);
+    expect(saveError.keyPattern?.userId).toBe(1);
   });
 });

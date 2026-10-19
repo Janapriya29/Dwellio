@@ -94,7 +94,7 @@ describe('User Model Validation & Behavior', () => {
     await expect(badRoleUser.validate()).rejects.toThrow();
   });
 
-  it('should enforce unique email constraint', async () => {
+  it('should enforce unique email constraint via MongoDB index (E11000)', async () => {
     const user1 = new User({
       name: 'User One',
       email: 'duplicate@example.com',
@@ -108,6 +108,19 @@ describe('User Model Validation & Behavior', () => {
       passwordHash: 'dummy_hash_2',
     });
 
-    await expect(user2.save()).rejects.toThrow();
+    // 1. Schema-level validation passes because validation alone cannot check existing DB state
+    await expect(user2.validate()).resolves.toBeUndefined();
+
+    // 2. Database save must be rejected by the actual MongoDB unique index with code 11000
+    let saveError: any;
+    try {
+      await user2.save();
+    } catch (err) {
+      saveError = err;
+    }
+
+    expect(saveError).toBeDefined();
+    expect(saveError.code).toBe(11000);
+    expect(saveError.keyPattern?.email).toBe(1);
   });
 });

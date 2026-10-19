@@ -9,6 +9,8 @@ export interface AppConfig {
   nodeEnv: string;
   clientUrl: string;
   mongoUri: string;
+  jwtSecret: string;
+  jwtExpiresIn: string;
 }
 
 const getEnvNumber = (key: string, defaultValue: number): number => {
@@ -22,11 +24,16 @@ const getEnvNumber = (key: string, defaultValue: number): number => {
   return parsed;
 };
 
+// Safe fallback for dev/testing only
+const DEV_JWT_SECRET = 'dwellio_development_jwt_secret_key_minimum_32_bytes_long';
+
 export const config: AppConfig = {
   port: getEnvNumber('PORT', 5000),
   nodeEnv: process.env.NODE_ENV || 'development',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017/dwellio',
+  jwtSecret: process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : DEV_JWT_SECRET),
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
 };
 
 // Validate critical configurations
@@ -35,7 +42,16 @@ export const validateConfig = (): void => {
     throw new Error(`[Config Error] PORT must be a valid port number between 1 and 65535.`);
   }
 
-  // NOTE on Database Integration (Phase 2):
-  // The MongoDB connection via Mongoose will be initialized in Phase 2 using config.mongoUri.
-  // In Phase 1, the server runs independently to verify foundational HTTP and health check behavior.
+  if (config.nodeEnv === 'production') {
+    if (!config.jwtSecret || config.jwtSecret === DEV_JWT_SECRET) {
+      throw new Error(`[Config Error] JWT_SECRET must be explicitly set to a unique, secure secret in production.`);
+    }
+    if (config.jwtSecret.length < 32) {
+      throw new Error(`[Config Error] JWT_SECRET must be at least 32 characters long in production.`);
+    }
+  } else {
+    if (!config.jwtSecret || config.jwtSecret.length < 16) {
+      throw new Error(`[Config Error] JWT_SECRET must be at least 16 characters long.`);
+    }
+  }
 };

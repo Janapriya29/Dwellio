@@ -89,3 +89,10 @@ npm run dev:frontend
 * **Frontend Home**: [http://localhost:5173](http://localhost:5173)
 * **General API Health**: [http://localhost:5000/api/health](http://localhost:5000/api/health)
 * **Database Readiness**: [http://localhost:5000/api/health/db](http://localhost:5000/api/health/db) (returns HTTP 200 when connected, HTTP 503 if disconnected)
+
+### 7. Authentication Endpoints (Phase 3)
+* **Register Customer**: `POST /api/auth/register` (body: `{ name, email, password }`)
+* **Login**: `POST /api/auth/login` (body: `{ email, password }` -> returns `{ user, token }`)
+* **Current User Profile**: `GET /api/auth/me` (header: `Authorization: Bearer <token>`)
+* **Role-Based Access Control**: Middleware `requireAuth` and `requireRole('customer' | 'provider' | 'admin')` enforce role boundaries on the server.
+
