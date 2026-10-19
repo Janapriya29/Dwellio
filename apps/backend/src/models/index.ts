@@ -5,3 +5,4 @@ export * from './Category';
 export * from './Service';
 export * from './Booking';
 export * from './SlotReservation';
+export * from './Review';

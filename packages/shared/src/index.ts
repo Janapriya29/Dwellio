@@ -63,6 +63,8 @@ export interface ProviderProfileData {
   skills: string[];
   verificationStatus: ProviderVerificationStatus;
   rejectionReason?: string;
+  ratingAverage?: number;
+  reviewCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -118,6 +120,8 @@ export interface PublicProviderData {
   serviceArea: string;
   skills: string[];
   verificationStatus: ProviderVerificationStatus;
+  ratingAverage?: number;
+  reviewCount?: number;
   user?: {
     name: string;
     email: string;
@@ -217,4 +221,73 @@ export interface RejectBookingPayload {
 export interface UpdateBookingStatusPayload {
   status: 'on_the_way' | 'in_progress' | 'completed' | 'cancelled';
   reason?: string;
+}
+
+// ----------------------------------------------------
+// Phase 7: Verified Reviews & Provider Reputation Types
+// ----------------------------------------------------
+
+export interface ProviderReplyData {
+  replyText: string;
+  repliedAt: string;
+}
+
+export interface ReviewData {
+  id: string;
+  bookingId: string;
+  customerId: string;
+  customer?: {
+    id: string;
+    name: string;
+  };
+  providerId: string;
+  provider?: {
+    id: string;
+    displayName: string;
+  };
+  serviceId: string;
+  service?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  rating: number; // Integer between 1 and 5
+  comment?: string;
+  providerReply?: ProviderReplyData;
+  isPublished: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Safe Public Review DTO for public catalog / discovery views (never exposes private customer info)
+export interface PublicReviewData {
+  id: string;
+  bookingId: string;
+  customerName: string; // Sanitized display name (e.g. "Pooja S." or "Pooja Sharma")
+  serviceName?: string;
+  rating: number;
+  comment?: string;
+  providerReply?: ProviderReplyData;
+  createdAt: string;
+}
+
+export interface CreateReviewPayload {
+  rating: number;
+  comment?: string;
+}
+
+export interface ReviewReplyPayload {
+  replyText: string;
+}
+
+export interface ProviderRatingSummary {
+  ratingAverage: number;
+  reviewCount: number;
+  distribution?: Record<number, number>; // Counts per star: { 1: 0, 2: 0, 3: 1, 4: 3, 5: 8 }
+}
+
+export interface PaginatedReviewsData {
+  reviews: PublicReviewData[];
+  pagination: PaginationMeta;
+  summary: ProviderRatingSummary;
 }

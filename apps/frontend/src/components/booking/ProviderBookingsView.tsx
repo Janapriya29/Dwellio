@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BookingData } from '@dwellio/shared';
+import { BookingData, ReviewData } from '@dwellio/shared';
 import { useAuth } from '../../context/AuthContext';
 import {
   fetchProviderBookings,
@@ -7,6 +7,7 @@ import {
   rejectProviderBooking,
   updateProviderBookingStatus,
 } from '../../services/bookingService';
+import { fetchBookingReview, replyToReview } from '../../services/reviewService';
 
 export const ProviderBookingsView: React.FC = () => {
   const { token, user, switchDemoRole } = useAuth();
@@ -19,6 +20,12 @@ export const ProviderBookingsView: React.FC = () => {
   const [rejectReason, setRejectReason] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
+  const [reviewsByBookingId, setReviewsByBookingId] = useState<Record<string, ReviewData>>({});
+  const [replyingReviewId, setReplyingReviewId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState<string>('');
+  const [isSubmittingReply, setIsSubmittingReply] = useState<boolean>(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
+
   const loadBookings = useCallback(async () => {
     if (!token) return;
     setIsLoading(true);
@@ -26,6 +33,17 @@ export const ProviderBookingsView: React.FC = () => {
     try {
       const data = await fetchProviderBookings(token);
       setBookings(data);
+
+      const completed = data.filter((b) => b.status === 'completed');
+      for (const b of completed) {
+        fetchBookingReview(b.id, token)
+          .then((rev) => {
+            if (rev) {
+              setReviewsByBookingId((prev) => ({ ...prev, [b.id]: rev }));
+            }
+          })
+          .catch(() => {});
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load provider bookings.';
       setErrorMessage(msg);
@@ -37,6 +55,29 @@ export const ProviderBookingsView: React.FC = () => {
   useEffect(() => {
     loadBookings();
   }, [loadBookings]);
+
+  const handleReplySubmit = async (reviewId: string, bookingId: string) => {
+    if (!token || !replyText.trim()) return;
+    if (replyText.trim().length < 10 || replyText.trim().length > 1000) {
+      setReplyError('Reply must be between 10 and 1,000 characters.');
+      return;
+    }
+    setIsSubmittingReply(true);
+    setReplyError(null);
+    try {
+      const updatedReview = await replyToReview(reviewId, { replyText: replyText.trim() }, token);
+      setReviewsByBookingId((prev) => ({ ...prev, [bookingId]: updatedReview }));
+      setReplyingReviewId(null);
+      setReplyText('');
+      setActionSuccessMessage('Response published successfully to customer review.');
+      setTimeout(() => setActionSuccessMessage(null), 4000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to publish reply.';
+      setReplyError(msg);
+    } finally {
+      setIsSubmittingReply(false);
+    }
+  };
 
   const handleAccept = async (id: string) => {
     if (!token) return;
@@ -328,21 +369,145 @@ export const ProviderBookingsView: React.FC = () => {
               <h3 className="text-lg font-bold text-dwellio-teal mb-4">
                 Completed &amp; Closed History ({completedJobs.length})
               </h3>
-              <div className="space-y-3">
-                {completedJobs.map((job) => (
-                  <div
-                    key={job.id}
-                    className="bg-white/80 rounded-2xl p-4 border border-slate-200 text-xs flex items-center justify-between"
-                  >
-                    <div>
-                      <span className="font-bold text-dwellio-teal">{job.service?.name}</span>
-                      <span className="text-slate-500 ml-2">for {job.customer?.name} ({new Date(job.scheduledStartTime).toLocaleDateString()})</span>
+              <div className="space-y-4">
+                {completedJobs.map((job) => {
+                  const review = reviewsByBookingId[job.id];
+                  const isReplying = review && replyingReviewId === review.id;
+
+                  return (
+                    <div
+                      key={job.id}
+                      className="bg-white rounded-3xl p-5 border border-dwellio-mint/60 shadow-xs"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-dwellio-mint/30 pb-3 mb-3">
+                        <div>
+                          <span className="font-bold text-dwellio-teal text-sm">{job.service?.name}</span>
+                          <span className="text-slate-500 text-xs ml-2">
+                            for {job.customer?.name} ({new Date(job.scheduledStartTime).toLocaleDateString()})
+                          </span>
+                        </div>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700 self-start sm:self-auto">
+                          {job.status}
+                        </span>
+                      </div>
+
+                      {/* Customer Review Section */}
+                      {job.status === 'completed' && (
+                        <div className="mt-2 text-xs">
+                          {review ? (
+                            <div className="bg-amber-50/60 rounded-2xl p-4 border border-amber-200/60">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-dwellio-teal uppercase text-[10px] tracking-wider">
+                                    Customer Review
+                                  </span>
+                                  <div className="flex text-amber-500 font-bold text-sm">
+                                    {'★'.repeat(review.rating)}
+                                    <span className="text-slate-300">{'★'.repeat(5 - review.rating)}</span>
+                                  </div>
+                                  <span className="font-bold text-dwellio-teal/80 text-[11px]">
+                                    {review.rating}/5
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-dwellio-teal/60">
+                                  {new Date(review.createdAt).toLocaleDateString()}
+                                </span>
+                              </div>
+
+                              {review.comment ? (
+                                <p className="text-dwellio-teal/90 italic leading-relaxed mb-3 bg-white/80 p-2.5 rounded-xl border border-amber-100">
+                                  &ldquo;{review.comment}&rdquo;
+                                </p>
+                              ) : (
+                                <p className="text-dwellio-teal/60 italic text-[11px] mb-2">No written comment provided.</p>
+                              )}
+
+                              {/* Provider Reply */}
+                              {review.providerReply ? (
+                                <div className="mt-2 pl-3 border-l-2 border-dwellio-teal/40 bg-white/90 p-2.5 rounded-r-xl border border-dwellio-mint/30">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="font-bold text-[10px] uppercase tracking-wider text-dwellio-teal">
+                                      Your Public Reply
+                                    </span>
+                                    <span className="text-[10px] text-dwellio-teal/60">
+                                      {new Date(review.providerReply.repliedAt).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                  <p className="text-dwellio-teal text-xs">
+                                    {review.providerReply.replyText}
+                                  </p>
+                                </div>
+                              ) : isReplying ? (
+                                <div className="mt-3 bg-white p-3.5 rounded-xl border border-dwellio-teal/30">
+                                  <span className="font-bold text-dwellio-teal text-xs block mb-1">
+                                    Write a One-Time Public Reply:
+                                  </span>
+                                  <p className="text-[11px] text-dwellio-teal/60 mb-2">
+                                    Your response will be visible on your public reviews profile. You can reply once per verified review.
+                                  </p>
+                                  <textarea
+                                    rows={3}
+                                    value={replyText}
+                                    onChange={(e) => setReplyText(e.target.value)}
+                                    placeholder="Thank the customer or address their feedback professionally (10–1,000 characters)..."
+                                    className="w-full rounded-xl border border-dwellio-mint/80 bg-dwellio-ivory/30 p-2.5 text-xs text-dwellio-teal focus:outline-none focus:ring-2 focus:ring-dwellio-teal mb-2"
+                                  />
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <span className="text-[10px] text-dwellio-teal/60">
+                                      {replyText.trim().length}/1,000 characters (min 10)
+                                    </span>
+                                    {replyError && (
+                                      <span className="text-[11px] text-rose-600 font-semibold">{replyError}</span>
+                                    )}
+                                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setReplyingReviewId(null);
+                                          setReplyText('');
+                                          setReplyError(null);
+                                        }}
+                                        className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={isSubmittingReply || replyText.trim().length < 10 || replyText.trim().length > 1000}
+                                        onClick={() => handleReplySubmit(review.id, job.id)}
+                                        className="px-3 py-1.5 rounded-lg bg-dwellio-teal text-white text-xs font-bold hover:bg-dwellio-teal/90 transition disabled:opacity-50"
+                                      >
+                                        {isSubmittingReply ? 'Posting...' : 'Post Reply'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="mt-2 flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setReplyingReviewId(review.id);
+                                      setReplyText('');
+                                      setReplyError(null);
+                                    }}
+                                    className="px-3 py-1.5 rounded-xl border border-dwellio-teal/40 text-dwellio-teal text-xs font-bold hover:bg-dwellio-mint/20 transition"
+                                  >
+                                    💬 Reply to Customer Review
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-slate-400 italic text-xs py-1">
+                              No customer review submitted yet.
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700">
-                      {job.status}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

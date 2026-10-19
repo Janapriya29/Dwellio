@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BookingData, BookingStatus } from '@dwellio/shared';
+import { BookingData, BookingStatus, ReviewData } from '@dwellio/shared';
 import { useAuth } from '../../context/AuthContext';
 import { fetchCustomerBookings, cancelCustomerBooking } from '../../services/bookingService';
+import { fetchBookingReview } from '../../services/reviewService';
+import { ReviewModal } from './ReviewModal';
 
 interface MyBookingsViewProps {
   onExploreServices: () => void;
@@ -47,6 +49,9 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
   const [cancelReason, setCancelReason] = useState<string>('');
   const [isCancelling, setIsCancelling] = useState<boolean>(false);
 
+  const [reviewingBooking, setReviewingBooking] = useState<BookingData | null>(null);
+  const [reviewsByBookingId, setReviewsByBookingId] = useState<Record<string, ReviewData>>({});
+
   const loadBookings = useCallback(async () => {
     if (!token) return;
     setIsLoading(true);
@@ -54,6 +59,18 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
     try {
       const data = await fetchCustomerBookings(token, selectedFilter);
       setBookings(data);
+
+      // Fetch reviews for any completed bookings
+      const completed = data.filter((b) => b.status === 'completed');
+      for (const b of completed) {
+        fetchBookingReview(b.id, token)
+          .then((review) => {
+            if (review) {
+              setReviewsByBookingId((prev) => ({ ...prev, [b.id]: review }));
+            }
+          })
+          .catch(() => {});
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load bookings.';
       setErrorMessage(msg);
@@ -190,6 +207,7 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
         <div className="space-y-4">
           {bookings.map((booking) => {
             const canCancel = booking.status === 'requested' || booking.status === 'accepted';
+            const existingReview = reviewsByBookingId[booking.id];
             return (
               <div
                 key={booking.id}
@@ -278,6 +296,70 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
                   </div>
                 </div>
 
+                {/* Review & Feedback Section for Completed Bookings */}
+                {booking.status === 'completed' && (
+                  <div className="pt-4 mt-4 border-t border-dwellio-mint/20">
+                    {existingReview ? (
+                      <div className="bg-amber-50/70 rounded-2xl p-4 border border-amber-200/70 text-xs">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-dwellio-teal uppercase text-[10px] tracking-wider">
+                              Your Verified Review
+                            </span>
+                            <div className="flex text-amber-500 font-bold text-sm">
+                              {'★'.repeat(existingReview.rating)}
+                              <span className="text-slate-300">{'★'.repeat(5 - existingReview.rating)}</span>
+                            </div>
+                            <span className="font-bold text-dwellio-teal/80 text-[11px]">
+                              {existingReview.rating}/5
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-dwellio-teal/60 font-medium">
+                            {new Date(existingReview.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        {existingReview.comment ? (
+                          <p className="text-dwellio-teal/90 italic leading-relaxed mb-2 bg-white/80 p-3 rounded-xl border border-amber-100">
+                            &ldquo;{existingReview.comment}&rdquo;
+                          </p>
+                        ) : (
+                          <p className="text-dwellio-teal/60 italic text-[11px] mb-2">No written feedback provided.</p>
+                        )}
+                        {existingReview.providerReply && (
+                          <div className="mt-3 pl-3 border-l-2 border-dwellio-teal/40 bg-white/90 p-3 rounded-r-xl border border-dwellio-mint/30">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-bold text-[10px] uppercase tracking-wider text-dwellio-teal">
+                                Professional Response
+                              </span>
+                              <span className="text-[10px] text-dwellio-teal/60">
+                                {new Date(existingReview.providerReply.repliedAt).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <p className="text-dwellio-teal text-xs leading-relaxed">
+                              {existingReview.providerReply.replyText}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-emerald-50/80 p-4 rounded-2xl border border-emerald-200/80">
+                        <div>
+                          <p className="text-xs font-bold text-emerald-950">How was your service experience?</p>
+                          <p className="text-[11px] text-emerald-800/80">Share your verified rating and feedback to help your provider and neighbors.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setReviewingBooking(booking)}
+                          className="px-4 py-2 rounded-xl text-xs font-bold bg-dwellio-teal text-white hover:bg-dwellio-teal/90 transition shadow-xs flex items-center justify-center gap-1.5 self-start sm:self-auto shrink-0"
+                        >
+                          <span className="text-amber-300">★</span>
+                          <span>Rate & Review Service</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Actions */}
                 {canCancel && (
                   <div className="pt-4 mt-4 border-t border-dwellio-mint/20 flex justify-end">
@@ -294,6 +376,19 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
             );
           })}
         </div>
+      )}
+
+      {/* Review Modal */}
+      {reviewingBooking && (
+        <ReviewModal
+          isOpen={!!reviewingBooking}
+          booking={reviewingBooking}
+          onClose={() => setReviewingBooking(null)}
+          onReviewSuccess={(review) => {
+            setReviewsByBookingId((prev) => ({ ...prev, [review.bookingId]: review }));
+            setReviewingBooking(null);
+          }}
+        />
       )}
 
       {/* Cancellation Dialog Modal */}

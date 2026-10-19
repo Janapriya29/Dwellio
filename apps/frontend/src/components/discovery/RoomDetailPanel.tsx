@@ -194,6 +194,25 @@ export const RoomDetailPanel: React.FC<RoomDetailPanelProps> = ({
                       </span>
                     </div>
 
+                    {/* Customer Rating / Review Summary */}
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {pro.reviewCount && pro.reviewCount > 0 ? (
+                        <div className="inline-flex items-center gap-1.5 text-xs">
+                          <span className="text-amber-500 font-bold">★</span>
+                          <span className="font-bold text-dwellio-teal">
+                            {Number(pro.ratingAverage).toFixed(1)}
+                          </span>
+                          <span className="text-dwellio-teal/60 font-medium">
+                            ({pro.reviewCount} {pro.reviewCount === 1 ? 'review' : 'reviews'})
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-dwellio-teal/50 italic">
+                          No reviews yet
+                        </span>
+                      )}
+                    </div>
+
                     <div className="text-xs text-dwellio-teal/70 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span className="font-medium text-dwellio-teal">
                         {pro.skills.join(', ')}

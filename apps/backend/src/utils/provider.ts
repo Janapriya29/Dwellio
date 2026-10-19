@@ -14,6 +14,8 @@ export const toProviderProfileData = (profile: IProviderProfile): ProviderProfil
     skills: profile.skills || [],
     verificationStatus: profile.verificationStatus,
     rejectionReason: profile.rejectionReason,
+    ratingAverage: profile.ratingAverage ?? 0,
+    reviewCount: profile.reviewCount ?? 0,
     createdAt: profile.createdAt ? profile.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: profile.updatedAt ? profile.updatedAt.toISOString() : new Date().toISOString(),
   };

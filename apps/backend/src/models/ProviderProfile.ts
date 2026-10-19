@@ -12,6 +12,8 @@ export interface IProviderProfile extends Document {
   rejectionReason?: string;
   reviewedBy?: Types.ObjectId;
   reviewedAt?: Date;
+  ratingAverage: number;
+  reviewCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -76,6 +78,17 @@ const providerProfileSchema = new Schema<IProviderProfile>(
     },
     reviewedAt: {
       type: Date,
+    },
+    ratingAverage: {
+      type: Number,
+      default: 0,
+      min: [0, 'Rating average cannot be negative'],
+      max: [5, 'Rating average cannot exceed 5'],
+    },
+    reviewCount: {
+      type: Number,
+      default: 0,
+      min: [0, 'Review count cannot be negative'],
     },
   },
   {

@@ -44,6 +44,8 @@ const mockProviders: PublicProviderData[] = [
     serviceArea: 'Central Metro',
     skills: ['Electrician', 'AC Service'],
     verificationStatus: 'approved',
+    ratingAverage: 4.8,
+    reviewCount: 12,
     createdAt: '2026-10-19T00:00:00.000Z',
   },
 ];
@@ -148,6 +150,8 @@ describe('RoomDetailPanel Component', () => {
 
     expect(screen.getByText('Naveen Kumar')).toBeInTheDocument();
     expect(screen.getByText(/fully verified/i)).toBeInTheDocument();
+    expect(screen.getByText('4.8')).toBeInTheDocument();
+    expect(screen.getByText('(12 reviews)')).toBeInTheDocument();
     expect(screen.getByText(/serving central metro/i)).toBeInTheDocument();
 
     // Click Book

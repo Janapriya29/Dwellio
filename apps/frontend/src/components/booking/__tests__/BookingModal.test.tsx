@@ -17,6 +17,8 @@ const mockProvider: PublicProviderData = {
   serviceArea: 'Central Metro',
   skills: ['Waterproofing', 'Roof repair'],
   verificationStatus: 'approved',
+  ratingAverage: 4.9,
+  reviewCount: 8,
   createdAt: '2026-10-19T00:00:00.000Z',
 };
 

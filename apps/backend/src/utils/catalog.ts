@@ -41,6 +41,8 @@ export const toPublicProviderData = (profile: IProviderProfile): PublicProviderD
     serviceArea: profile.serviceArea,
     skills: profile.skills || [],
     verificationStatus: profile.verificationStatus,
+    ratingAverage: profile.ratingAverage ?? 0,
+    reviewCount: profile.reviewCount ?? 0,
     user: userDoc && userDoc._id
       ? {
           name: userDoc.name,
