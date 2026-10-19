@@ -4,6 +4,7 @@ import { ServiceDiscoveryPage } from './pages/ServiceDiscoveryPage';
 import { MyBookingsView } from './components/booking/MyBookingsView';
 import { ProviderBookingsView } from './components/booking/ProviderBookingsView';
 import { AdminDashboardLayout } from './components/admin/AdminDashboardLayout';
+import { NotificationBell } from './components/notification/NotificationBell';
 
 type AppTab = 'discover' | 'my-bookings' | 'provider-portal' | 'admin-dashboard';
 
@@ -42,7 +43,7 @@ const MainLayout: React.FC = () => {
 
             {/* Phase Badge */}
             <span className="md:hidden inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-dwellio-mint/40 text-dwellio-teal border border-dwellio-mint/80">
-              Phase 8
+              Phase 9
             </span>
           </div>
 
@@ -103,8 +104,10 @@ const MainLayout: React.FC = () => {
             )}
           </nav>
 
-          {/* Active Persona / Role Switcher */}
+          {/* Active Persona, Notifications & Role Switcher */}
           <div className="flex items-center gap-2">
+            <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
+
             <div className="hidden lg:flex flex-col text-right text-[11px]">
               <span className="font-bold text-dwellio-teal">{user?.name || 'Customer'}</span>
               <span className="text-dwellio-teal/60 capitalize">{user?.role || 'Guest'}</span>
@@ -167,7 +170,7 @@ const MainLayout: React.FC = () => {
           <p>&copy; {new Date().getFullYear()} Dwellio. Your Home, in Good Hands.</p>
           <p className="flex items-center gap-1.5 text-dwellio-teal/70">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            Phase 8: Admin Dashboard &amp; Platform Management
+            Phase 9: In-App Notifications &amp; Communication
           </p>
         </div>
       </footer>

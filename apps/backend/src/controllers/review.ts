@@ -16,6 +16,7 @@ import {
   formatPublicReviewDto,
   recalculateProviderRating,
 } from '../utils/review';
+import { sendInAppNotification } from '../utils/notification';
 
 /**
  * Customer: Submit a verified review for a completed booking
@@ -149,6 +150,17 @@ export const createBookingReview = async (req: Request, res: Response): Promise<
       .populate('customerId', 'name')
       .populate('providerId', 'displayName')
       .populate('serviceId', 'name slug');
+
+    // Trigger in-app notification to provider (best-effort, non-blocking)
+    const serviceName = (populated?.serviceId as any)?.name || 'service';
+    await sendInAppNotification({
+      recipientId: booking.providerUserId,
+      type: 'REVIEW_RECEIVED',
+      title: 'New Review Received',
+      message: `${req.user.name} submitted a ${rating}-star review for ${serviceName}.${trimmedComment ? ` "${trimmedComment.slice(0, 100)}"` : ''}`,
+      bookingId: booking._id,
+      dedupKey: `review:${newReview._id}:submitted`,
+    });
 
     const response: ApiResponse<ReviewData> = {
       success: true,
@@ -408,6 +420,17 @@ export const replyToReview = async (req: Request, res: Response): Promise<void> 
       });
       return;
     }
+
+    // Trigger in-app notification to customer (best-effort, non-blocking)
+    const providerName = (updated.providerId as any)?.displayName || req.providerProfile.displayName || 'The service professional';
+    await sendInAppNotification({
+      recipientId: review.customerId,
+      type: 'REVIEW_REPLIED',
+      title: 'Provider Replied to Your Review',
+      message: `${providerName} replied to your review: "${trimmedReply.slice(0, 150)}".`,
+      bookingId: review.bookingId,
+      dedupKey: `review:${review._id}:replied`,
+    });
 
     const response: ApiResponse<ReviewData> = {
       success: true,

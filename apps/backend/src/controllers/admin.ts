@@ -5,6 +5,7 @@ import { ProviderProfile, IProviderProfile } from '../models/ProviderProfile';
 import { User } from '../models/User';
 import { AuditLog } from '../models/AuditLog';
 import { toProviderProfileData } from '../utils/provider';
+import { sendInAppNotification } from '../utils/notification';
 
 /**
  * List Provider Applications (Admin)
@@ -185,6 +186,15 @@ export const approveApplication = async (req: Request, res: Response): Promise<v
     },
   }).save();
 
+  // Trigger in-app notification to provider applicant (best-effort, non-blocking)
+  await sendInAppNotification({
+    recipientId: profile.userId,
+    type: 'APPLICATION_APPROVED',
+    title: 'Provider Application Approved',
+    message: 'Congratulations! Your service provider profile has been approved. You can now accept customer bookings on Dwellio.',
+    dedupKey: `application:${profile._id}:approved`,
+  });
+
   const response: ApiResponse<{ application: ReturnType<typeof toProviderProfileData> }> = {
     success: true,
     message: 'Provider application approved successfully.',
@@ -258,6 +268,16 @@ export const rejectApplication = async (req: Request, res: Response): Promise<vo
       reason: reason.trim(),
     },
   }).save();
+
+  // Trigger in-app notification to provider applicant (best-effort, non-blocking)
+  const safeReason = reason.trim().slice(0, 150);
+  await sendInAppNotification({
+    recipientId: profile.userId,
+    type: 'APPLICATION_REJECTED',
+    title: 'Provider Application Update',
+    message: `Your provider application was reviewed and could not be approved at this time: "${safeReason}".`,
+    dedupKey: `application:${profile._id}:rejected`,
+  });
 
   const response: ApiResponse<{ application: ReturnType<typeof toProviderProfileData> }> = {
     success: true,

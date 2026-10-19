@@ -6,6 +6,7 @@ import { Service } from '../models/Service';
 import { ProviderProfile } from '../models/ProviderProfile';
 import { User } from '../models/User';
 import { formatBookingDto, findConflictingProviderBooking, releaseProviderSlots } from '../utils/booking';
+import { sendInAppNotification } from '../utils/notification';
 
 const MIN_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
@@ -198,6 +199,16 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
     });
 
     await newBooking.save();
+
+    // Trigger in-app notification to assigned provider (best-effort, non-blocking)
+    await sendInAppNotification({
+      recipientId: provider.userId,
+      type: 'BOOKING_REQUESTED',
+      title: 'New Booking Request',
+      message: `New appointment requested by ${req.user.name} for ${service.name}.`,
+      bookingId: newBooking._id,
+      dedupKey: `booking:${newBooking._id}:requested`,
+    });
 
     const populated = await Booking.findById(newBooking._id)
       .populate('customerId', 'name email')
@@ -414,6 +425,18 @@ export const cancelCustomerBooking = async (req: Request, res: Response): Promis
 
     // Release slot reservations when customer cancels booking
     await releaseProviderSlots(booking._id);
+
+    // Trigger in-app notification to assigned provider (best-effort, non-blocking)
+    const serviceName = (updated.serviceId as any)?.name || 'service';
+    const safeReason = cancellationText.slice(0, 150);
+    await sendInAppNotification({
+      recipientId: booking.providerUserId,
+      type: 'BOOKING_CANCELLED',
+      title: 'Booking Cancelled by Customer',
+      message: `Customer ${req.user.name} cancelled the appointment for ${serviceName}. Reason: ${safeReason}`,
+      bookingId: booking._id,
+      dedupKey: `booking:${booking._id}:cancelled_by_customer`,
+    });
 
     const response: ApiResponse<BookingData> = {
       success: true,

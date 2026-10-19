@@ -363,3 +363,41 @@ export interface AdminReviewItem {
   createdAt: string;
 }
 
+// ----------------------------------------------------
+// Phase 9: Notifications & Communication Types
+// ----------------------------------------------------
+
+export type NotificationType =
+  | 'BOOKING_REQUESTED'
+  | 'BOOKING_ACCEPTED'
+  | 'BOOKING_REJECTED'
+  | 'BOOKING_ON_THE_WAY'
+  | 'BOOKING_IN_PROGRESS'
+  | 'BOOKING_COMPLETED'
+  | 'BOOKING_CANCELLED'
+  | 'REVIEW_RECEIVED'
+  | 'REVIEW_REPLIED'
+  | 'APPLICATION_APPROVED'
+  | 'APPLICATION_REJECTED';
+
+export interface NotificationData {
+  id: string;
+  recipientId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  bookingId?: string;
+  isRead: boolean;
+  readAt?: string;
+  createdAt: string;
+}
+
+export interface NotificationUnreadCountData {
+  unreadCount: number;
+}
+
+export interface MarkAllReadResponseData {
+  markedCount: number;
+}
+
+

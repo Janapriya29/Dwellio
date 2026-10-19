@@ -14,6 +14,7 @@ import {
   acquireProviderSlots,
   releaseProviderSlots,
 } from '../utils/booking';
+import { sendInAppNotification } from '../utils/notification';
 
 /**
  * Valid allowed status transitions for service providers
@@ -227,6 +228,18 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // Trigger in-app notification to customer (best-effort, non-blocking)
+    const providerName = (updated.providerId as any)?.displayName || req.providerProfile.displayName || 'Your service professional';
+    const serviceName = (updated.serviceId as any)?.name || 'service';
+    await sendInAppNotification({
+      recipientId: booking.customerId,
+      type: 'BOOKING_ACCEPTED',
+      title: 'Booking Confirmed',
+      message: `${providerName} confirmed your booking for ${serviceName}.`,
+      bookingId: booking._id,
+      dedupKey: `booking:${booking._id}:accepted`,
+    });
+
     const response: ApiResponse<BookingData> = {
       success: true,
       message: 'Booking successfully accepted.',
@@ -324,6 +337,18 @@ export const rejectBooking = async (req: Request, res: Response): Promise<void> 
 
     // Release any associated slot reservations if present
     await releaseProviderSlots(booking._id);
+
+    // Trigger in-app notification to customer (best-effort, non-blocking)
+    const providerName = (updated.providerId as any)?.displayName || req.providerProfile.displayName || 'The service professional';
+    const safeReason = rejectionText.slice(0, 150);
+    await sendInAppNotification({
+      recipientId: booking.customerId,
+      type: 'BOOKING_REJECTED',
+      title: 'Booking Declined',
+      message: `${providerName} was unable to accept your booking: "${safeReason}".`,
+      bookingId: booking._id,
+      dedupKey: `booking:${booking._id}:rejected`,
+    });
 
     const response: ApiResponse<BookingData> = {
       success: true,
@@ -435,6 +460,49 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
     // Release slot reservations on terminal completion or cancellation
     if (targetStatus === 'cancelled' || targetStatus === 'completed') {
       await releaseProviderSlots(booking._id);
+    }
+
+    // Trigger in-app notification to customer based on target status (best-effort, non-blocking)
+    const providerName = (updated.providerId as any)?.displayName || req.providerProfile.displayName || 'Your service professional';
+    const serviceName = (updated.serviceId as any)?.name || 'service';
+
+    if (targetStatus === 'on_the_way') {
+      await sendInAppNotification({
+        recipientId: booking.customerId,
+        type: 'BOOKING_ON_THE_WAY',
+        title: 'Provider On The Way',
+        message: `${providerName} is on the way to your service location.`,
+        bookingId: booking._id,
+        dedupKey: `booking:${booking._id}:on_the_way`,
+      });
+    } else if (targetStatus === 'in_progress') {
+      await sendInAppNotification({
+        recipientId: booking.customerId,
+        type: 'BOOKING_IN_PROGRESS',
+        title: 'Service In Progress',
+        message: `Work has started on your ${serviceName} appointment.`,
+        bookingId: booking._id,
+        dedupKey: `booking:${booking._id}:in_progress`,
+      });
+    } else if (targetStatus === 'completed') {
+      await sendInAppNotification({
+        recipientId: booking.customerId,
+        type: 'BOOKING_COMPLETED',
+        title: 'Service Completed',
+        message: `Your ${serviceName} service has been completed. Leave a verified review to rate your pro!`,
+        bookingId: booking._id,
+        dedupKey: `booking:${booking._id}:completed`,
+      });
+    } else if (targetStatus === 'cancelled') {
+      const safeReason = statusReasonText.slice(0, 150);
+      await sendInAppNotification({
+        recipientId: booking.customerId,
+        type: 'BOOKING_CANCELLED',
+        title: 'Booking Cancelled by Provider',
+        message: `${providerName} cancelled the appointment: "${safeReason}".`,
+        bookingId: booking._id,
+        dedupKey: `booking:${booking._id}:cancelled_by_provider`,
+      });
     }
 
     const response: ApiResponse<BookingData> = {

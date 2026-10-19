@@ -8,6 +8,7 @@ import { adminRouter } from './routes/admin';
 import { catalogPublicRouter } from './routes/catalogPublic';
 import { bookingRouter } from './routes/booking';
 import { reviewRouter } from './routes/review';
+import { notificationRouter } from './routes/notification';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
 
 export const createApp = (customRouter?: express.Router): Application => {
@@ -31,6 +32,7 @@ export const createApp = (customRouter?: express.Router): Application => {
   app.use('/api', catalogPublicRouter);
   app.use('/api', bookingRouter);
   app.use('/api', reviewRouter);
+  app.use('/api', notificationRouter);
 
   // Optional custom router (used for testing or modular route injection)
   if (customRouter) {
