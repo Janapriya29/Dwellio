@@ -96,3 +96,19 @@ npm run dev:frontend
 * **Current User Profile**: `GET /api/auth/me` (header: `Authorization: Bearer <token>`)
 * **Role-Based Access Control**: Middleware `requireAuth` and `requireRole('customer' | 'provider' | 'admin')` enforce role boundaries on the server.
 
+### 8. Provider Onboarding & Admin Endpoints (Phase 4)
+* **Apply as Provider**: `POST /api/providers/apply` (body: `{ displayName, phone, serviceArea, skills }`, authenticated, forced to `pending`)
+* **Check Application Status**: `GET /api/providers/application-status` (authenticated applicant)
+* **List Provider Applications**: `GET /api/admin/providers/applications` (admin-only, paginated, supports `?status=pending|approved|rejected`)
+* **Get Application Details**: `GET /api/admin/providers/applications/:id` (admin-only)
+* **Approve Application**: `PATCH /api/admin/providers/applications/:id/approve` (admin-only, creates immutable AuditLog, elevates user role to `provider`)
+* **Reject Application**: `PATCH /api/admin/providers/applications/:id/reject` (admin-only, body: `{ reason }`, creates immutable AuditLog)
+* **Server-Side Approval Verification**: Middleware `requireApprovedProvider` strictly checks the database verification status (`approved`) on every provider request, never trusting JWT claims alone.
+
+### 9. Admin Account Provisioning
+Seed the initial administrator account securely via local CLI (never exposed publicly via HTTP):
+```bash
+npm run seed:admin
+```
+*(In production, set `ADMIN_EMAIL` and `ADMIN_PASSWORD` (minimum 12 characters) as environment variables before executing).*
+

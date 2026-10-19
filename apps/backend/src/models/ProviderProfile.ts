@@ -8,6 +8,9 @@ export interface IProviderProfile extends Document {
   serviceArea: string;
   skills: string[];
   verificationStatus: ProviderVerificationStatus;
+  rejectionReason?: string;
+  reviewedBy?: Types.ObjectId;
+  reviewedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +57,18 @@ const providerProfileSchema = new Schema<IProviderProfile>(
       },
       default: 'pending',
       index: true,
+    },
+    rejectionReason: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Rejection reason cannot exceed 500 characters'],
+    },
+    reviewedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    reviewedAt: {
+      type: Date,
     },
   },
   {

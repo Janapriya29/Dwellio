@@ -53,3 +53,31 @@ export interface AuthTokenPayload {
   exp?: number;
 }
 
+// Sanitized provider profile data representation
+export interface ProviderProfileData {
+  id: string;
+  userId: string;
+  displayName: string;
+  phone: string;
+  serviceArea: string;
+  skills: string[];
+  verificationStatus: ProviderVerificationStatus;
+  rejectionReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Audit log actions
+export type AuditLogAction =
+  | 'PROVIDER_APPLICATION_APPROVED'
+  | 'PROVIDER_APPLICATION_REJECTED';
+
+// Pagination metadata envelope
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+

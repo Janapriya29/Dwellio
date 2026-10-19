@@ -2,12 +2,14 @@ import { Request, Response, NextFunction } from 'express';
 import { ApiResponse, UserRole } from '@dwellio/shared';
 import { verifyAuthToken } from '../utils/auth';
 import { User, IUser } from '../models/User';
+import { ProviderProfile, IProviderProfile } from '../models/ProviderProfile';
 
-// Extend Express Request interface to include authenticated user
+// Extend Express Request interface to include authenticated user and provider profile
 declare global {
   namespace Express {
     interface Request {
       user?: IUser;
+      providerProfile?: IProviderProfile;
     }
   }
 }
@@ -102,4 +104,50 @@ export const requireRole = (...allowedRoles: UserRole[]) => {
 
     next();
   };
+};
+
+/**
+ * Middleware: Require an approved service provider
+ * Strictly checks the database approval state on the server, never relying on JWT claims alone.
+ */
+export const requireApprovedProvider = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  if (!req.user) {
+    const response: ApiResponse = {
+      success: false,
+      message: 'Authentication required prior to provider authorization.',
+    };
+    res.status(401).json(response);
+    return;
+  }
+
+  // Always query database directly to verify current approval state
+  const profile = await ProviderProfile.findOne({ userId: req.user._id });
+
+  if (!profile) {
+    const response: ApiResponse = {
+      success: false,
+      message: 'Provider profile not found. Please submit a provider application first.',
+    };
+    res.status(403).json(response);
+    return;
+  }
+
+  if (profile.verificationStatus !== 'approved') {
+    const response: ApiResponse = {
+      success: false,
+      message:
+        profile.verificationStatus === 'pending'
+          ? 'Access denied: provider account is pending administrator approval.'
+          : `Access denied: provider application was rejected. Reason: ${profile.rejectionReason || 'Requirements not met'}`,
+    };
+    res.status(403).json(response);
+    return;
+  }
+
+  req.providerProfile = profile;
+  next();
 };
