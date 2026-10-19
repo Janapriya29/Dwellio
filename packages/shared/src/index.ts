@@ -72,7 +72,14 @@ export interface ProviderProfileData {
 // Audit log actions
 export type AuditLogAction =
   | 'PROVIDER_APPLICATION_APPROVED'
-  | 'PROVIDER_APPLICATION_REJECTED';
+  | 'PROVIDER_APPLICATION_REJECTED'
+  | 'CATEGORY_CREATED'
+  | 'CATEGORY_UPDATED'
+  | 'CATEGORY_STATUS_CHANGED'
+  | 'SERVICE_CREATED'
+  | 'SERVICE_UPDATED'
+  | 'SERVICE_STATUS_CHANGED'
+  | 'REVIEW_MODERATED';
 
 // Pagination metadata envelope
 export interface PaginationMeta {
@@ -291,3 +298,68 @@ export interface PaginatedReviewsData {
   pagination: PaginationMeta;
   summary: ProviderRatingSummary;
 }
+
+// ----------------------------------------------------
+// Phase 8: Admin Dashboard & Platform Management Types
+// ----------------------------------------------------
+
+export interface AuditLogData {
+  id: string;
+  adminId: string;
+  adminName?: string;
+  adminEmail?: string;
+  action: AuditLogAction;
+  targetId: string;
+  targetType: string;
+  details?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AdminOverviewStats {
+  totalCustomers: number;
+  totalProviders: number;
+  pendingApplications: number;
+  activeServices: number;
+  totalBookings: number;
+  bookingsByStatus: Record<BookingStatus, number>;
+  totalReviews: number;
+}
+
+export interface AdminOverviewData {
+  stats: AdminOverviewStats;
+  recentActivity: AuditLogData[];
+}
+
+export interface AdminBookingItem {
+  id: string;
+  serviceName: string;
+  customerName: string;
+  customerEmail?: string;
+  providerDisplayName: string;
+  providerPhone?: string;
+  scheduledStartTime: string;
+  scheduledEndTime: string;
+  status: BookingStatus;
+  createdAt: string;
+}
+
+export interface ModerateReviewPayload {
+  isPublished: boolean;
+  moderationReason?: string;
+}
+
+export interface AdminReviewItem {
+  id: string;
+  bookingId: string;
+  customerName: string;
+  providerDisplayName: string;
+  serviceName: string;
+  rating: number;
+  comment?: string;
+  providerReply?: ProviderReplyData;
+  isPublished: boolean;
+  moderationReason?: string;
+  moderatedAt?: string;
+  createdAt: string;
+}
+

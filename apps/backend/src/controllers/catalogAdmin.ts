@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { ApiResponse, CategoryData, ServiceData } from '@dwellio/shared';
 import { Category } from '../models/Category';
 import { Service } from '../models/Service';
+import { AuditLog } from '../models/AuditLog';
 import { toCategoryData, toServiceData } from '../utils/catalog';
 
 const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -77,6 +78,20 @@ export const createCategory = async (req: Request, res: Response): Promise<void>
 
   await newCategory.save();
 
+  if (req.user) {
+    await new AuditLog({
+      adminId: req.user._id,
+      action: 'CATEGORY_CREATED',
+      targetId: newCategory._id,
+      targetType: 'Category',
+      details: {
+        name: newCategory.name,
+        slug: newCategory.slug,
+        rooms: newCategory.rooms,
+      },
+    }).save().catch(() => {});
+  }
+
   res.status(201).json({
     success: true,
     message: 'Category created successfully.',
@@ -132,6 +147,20 @@ export const updateCategory = async (req: Request, res: Response): Promise<void>
 
   await category.save();
 
+  if (req.user) {
+    await new AuditLog({
+      adminId: req.user._id,
+      action: 'CATEGORY_UPDATED',
+      targetId: category._id,
+      targetType: 'Category',
+      details: {
+        name: category.name,
+        slug: category.slug,
+        rooms: category.rooms,
+      },
+    }).save().catch(() => {});
+  }
+
   res.status(200).json({
     success: true,
     message: 'Category updated successfully.',
@@ -165,6 +194,19 @@ export const setCategoryStatus = async (req: Request, res: Response): Promise<vo
 
   category.isActive = isActive;
   await category.save();
+
+  if (req.user) {
+    await new AuditLog({
+      adminId: req.user._id,
+      action: 'CATEGORY_STATUS_CHANGED',
+      targetId: category._id,
+      targetType: 'Category',
+      details: {
+        name: category.name,
+        isActive,
+      },
+    }).save().catch(() => {});
+  }
 
   res.status(200).json({
     success: true,
@@ -254,6 +296,20 @@ export const createService = async (req: Request, res: Response): Promise<void> 
 
   await newService.save();
 
+  if (req.user) {
+    await new AuditLog({
+      adminId: req.user._id,
+      action: 'SERVICE_CREATED',
+      targetId: newService._id,
+      targetType: 'Service',
+      details: {
+        categoryId: newService.categoryId,
+        name: newService.name,
+        slug: newService.slug,
+      },
+    }).save().catch(() => {});
+  }
+
   res.status(201).json({
     success: true,
     message: 'Service created successfully.',
@@ -299,6 +355,20 @@ export const updateService = async (req: Request, res: Response): Promise<void> 
 
   await service.save();
 
+  if (req.user) {
+    await new AuditLog({
+      adminId: req.user._id,
+      action: 'SERVICE_UPDATED',
+      targetId: service._id,
+      targetType: 'Service',
+      details: {
+        categoryId: service.categoryId,
+        name: service.name,
+        slug: service.slug,
+      },
+    }).save().catch(() => {});
+  }
+
   res.status(200).json({
     success: true,
     message: 'Service updated successfully.',
@@ -332,6 +402,19 @@ export const setServiceStatus = async (req: Request, res: Response): Promise<voi
 
   service.isActive = isActive;
   await service.save();
+
+  if (req.user) {
+    await new AuditLog({
+      adminId: req.user._id,
+      action: 'SERVICE_STATUS_CHANGED',
+      targetId: service._id,
+      targetType: 'Service',
+      details: {
+        name: service.name,
+        isActive,
+      },
+    }).save().catch(() => {});
+  }
 
   res.status(200).json({
     success: true,

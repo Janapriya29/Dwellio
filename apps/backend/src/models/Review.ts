@@ -14,6 +14,9 @@ export interface IReview extends Document {
   comment?: string;
   providerReply?: IProviderReply;
   isPublished: boolean;
+  moderatedBy?: Types.ObjectId;
+  moderatedAt?: Date;
+  moderationReason?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -84,6 +87,18 @@ const reviewSchema = new Schema<IReview>(
       type: Boolean,
       default: true,
       index: true,
+    },
+    moderatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    moderatedAt: {
+      type: Date,
+    },
+    moderationReason: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Moderation reason cannot exceed 500 characters'],
     },
   },
   {

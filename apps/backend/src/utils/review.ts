@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { ReviewData, PublicReviewData } from '@dwellio/shared';
+import { ReviewData, PublicReviewData, AdminReviewItem } from '@dwellio/shared';
 import { Review } from '../models/Review';
 import { ProviderProfile } from '../models/ProviderProfile';
 
@@ -91,17 +91,72 @@ export const formatPublicReviewDto = (review: any): PublicReviewData => {
 };
 
 /**
+ * Maps an internal Review document into an AdminReviewItem DTO for administrative moderation oversight.
+ */
+export const formatAdminReviewDto = (review: any): AdminReviewItem => {
+  const customerName = review.customerId && typeof review.customerId === 'object' && 'name' in review.customerId
+    ? review.customerId.name
+    : 'Customer';
+
+  const providerDisplayName = review.providerId && typeof review.providerId === 'object' && 'displayName' in review.providerId
+    ? review.providerId.displayName
+    : 'Provider';
+
+  const serviceName = review.serviceId && typeof review.serviceId === 'object' && 'name' in review.serviceId
+    ? review.serviceId.name
+    : 'Service';
+
+  const providerReply = review.providerReply && review.providerReply.replyText
+    ? {
+        replyText: review.providerReply.replyText,
+        repliedAt: review.providerReply.repliedAt instanceof Date
+          ? review.providerReply.repliedAt.toISOString()
+          : new Date(review.providerReply.repliedAt).toISOString(),
+      }
+    : undefined;
+
+  return {
+    id: review._id.toString(),
+    bookingId: (review.bookingId?._id || review.bookingId).toString(),
+    customerName,
+    providerDisplayName,
+    serviceName,
+    rating: review.rating,
+    comment: review.comment,
+    providerReply,
+    isPublished: review.isPublished ?? true,
+    moderationReason: review.moderationReason,
+    moderatedAt: review.moderatedAt instanceof Date
+      ? review.moderatedAt.toISOString()
+      : (review.moderatedAt ? new Date(review.moderatedAt).toISOString() : undefined),
+    createdAt: review.createdAt instanceof Date ? review.createdAt.toISOString() : new Date(review.createdAt).toISOString(),
+  };
+};
+
+/**
  * Recalculates and updates the provider's authoritative ratingAverage and reviewCount.
- * Uses MongoDB Aggregation to guarantee mathematical accuracy over all published reviews.
- * Employs optimistic conditional updates ($lte guard) to prevent concurrent lost updates or stale overwrites.
+ * Uses MongoDB Aggregation to guarantee mathematical accuracy over all currently published reviews.
+ * Employs optimistic version compare-and-swap (CAS) with exponential backoff retries to guarantee
+ * aggregate consistency across concurrent review creations, hides, and restores on standalone MongoDB.
  */
 export const recalculateProviderRating = async (
-  providerId: Types.ObjectId | string,
-  maxRetries = 3
+  providerId: any,
+  maxRetries = 5
 ): Promise<{ ratingAverage: number; reviewCount: number }> => {
-  const pId = new Types.ObjectId(providerId.toString());
+  const rawId = providerId && typeof providerId === 'object' && '_id' in providerId
+    ? providerId._id
+    : providerId;
+  const pId = new Types.ObjectId(rawId.toString());
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // 1. Read current version from ProviderProfile
+    const profile = await ProviderProfile.findById(pId).select('ratingVersion reviewCount ratingAverage');
+    if (!profile) {
+      return { ratingAverage: 0, reviewCount: 0 };
+    }
+    const versionBefore = profile.ratingVersion ?? 0;
+
+    // 2. Perform aggregation over all published reviews
     const stats = await Review.aggregate([
       {
         $match: {
@@ -121,13 +176,13 @@ export const recalculateProviderRating = async (
     const reviewCount = stats.length > 0 ? stats[0].count : 0;
     const ratingAverage = stats.length > 0 ? Math.round(stats[0].avgRating * 10) / 10 : 0;
 
-    // Concurrency guard: update only if reviewCount in ProviderProfile is <= this calculated count
+    // 3. Atomically update ProviderProfile only if ratingVersion hasn't changed since we sampled
     const updated = await ProviderProfile.findOneAndUpdate(
       {
         _id: pId,
         $or: [
-          { reviewCount: { $lte: reviewCount } },
-          { reviewCount: { $exists: false } },
+          { ratingVersion: versionBefore },
+          { ratingVersion: { $exists: false } },
         ],
       },
       {
@@ -135,27 +190,29 @@ export const recalculateProviderRating = async (
           ratingAverage,
           reviewCount,
         },
+        $inc: { ratingVersion: 1 },
       },
       { returnDocument: 'after' }
     );
 
-    if (updated || reviewCount === 0) {
+    if (updated) {
       return { ratingAverage, reviewCount };
     }
 
-    const current = await ProviderProfile.findById(pId);
-    if (current && current.reviewCount >= reviewCount) {
-      return { ratingAverage: current.ratingAverage, reviewCount: current.reviewCount };
-    }
+    // Version changed concurrently; back off briefly before retrying
+    await new Promise((resolve) => setTimeout(resolve, 15 * (attempt + 1)));
   }
 
-  // Fallback authoritative update
+  // Fallback authoritative recalculation if retries were exhausted
   const finalStats = await Review.aggregate([
     { $match: { providerId: pId, isPublished: true } },
     { $group: { _id: '$providerId', count: { $sum: 1 }, avgRating: { $avg: '$rating' } } },
   ]);
   const count = finalStats.length > 0 ? finalStats[0].count : 0;
   const avg = finalStats.length > 0 ? Math.round(finalStats[0].avgRating * 10) / 10 : 0;
-  await ProviderProfile.findByIdAndUpdate(pId, { $set: { ratingAverage: avg, reviewCount: count } });
+  await ProviderProfile.findByIdAndUpdate(pId, {
+    $set: { ratingAverage: avg, reviewCount: count },
+    $inc: { ratingVersion: 1 },
+  });
   return { ratingAverage: avg, reviewCount: count };
 };

@@ -3,8 +3,9 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ServiceDiscoveryPage } from './pages/ServiceDiscoveryPage';
 import { MyBookingsView } from './components/booking/MyBookingsView';
 import { ProviderBookingsView } from './components/booking/ProviderBookingsView';
+import { AdminDashboardLayout } from './components/admin/AdminDashboardLayout';
 
-type AppTab = 'discover' | 'my-bookings' | 'provider-portal';
+type AppTab = 'discover' | 'my-bookings' | 'provider-portal' | 'admin-dashboard';
 
 const MainLayout: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>('discover');
@@ -41,7 +42,7 @@ const MainLayout: React.FC = () => {
 
             {/* Phase Badge */}
             <span className="md:hidden inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-dwellio-mint/40 text-dwellio-teal border border-dwellio-mint/80">
-              Phase 6
+              Phase 8
             </span>
           </div>
 
@@ -85,6 +86,21 @@ const MainLayout: React.FC = () => {
               <span>🔧</span>
               <span>Provider Portal</span>
             </button>
+
+            {user?.role === 'admin' && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('admin-dashboard')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                  activeTab === 'admin-dashboard'
+                    ? 'bg-dwellio-teal text-white shadow-xs'
+                    : 'text-dwellio-teal/70 hover:text-dwellio-teal'
+                }`}
+              >
+                <span>🛡️</span>
+                <span>Admin Dashboard</span>
+              </button>
+            )}
           </nav>
 
           {/* Active Persona / Role Switcher */}
@@ -118,6 +134,17 @@ const MainLayout: React.FC = () => {
                 >
                   Provider
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    switchDemoRole('admin');
+                    setActiveTab('admin-dashboard');
+                  }}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white border border-dwellio-mint/80 hover:bg-dwellio-mint/20 text-dwellio-teal transition"
+                  title="Switch to Admin session (Dwellio Administrator)"
+                >
+                  Admin
+                </button>
               </div>
             )}
           </div>
@@ -131,6 +158,7 @@ const MainLayout: React.FC = () => {
           <MyBookingsView onExploreServices={() => setActiveTab('discover')} />
         )}
         {activeTab === 'provider-portal' && <ProviderBookingsView />}
+        {activeTab === 'admin-dashboard' && <AdminDashboardLayout />}
       </main>
 
       {/* Footer */}
@@ -139,7 +167,7 @@ const MainLayout: React.FC = () => {
           <p>&copy; {new Date().getFullYear()} Dwellio. Your Home, in Good Hands.</p>
           <p className="flex items-center gap-1.5 text-dwellio-teal/70">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            Phase 6: Real Booking Lifecycle &amp; Scheduling Engine
+            Phase 8: Admin Dashboard &amp; Platform Management
           </p>
         </div>
       </footer>

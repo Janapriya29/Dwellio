@@ -14,6 +14,7 @@ export interface IProviderProfile extends Document {
   reviewedAt?: Date;
   ratingAverage: number;
   reviewCount: number;
+  ratingVersion?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -89,6 +90,10 @@ const providerProfileSchema = new Schema<IProviderProfile>(
       type: Number,
       default: 0,
       min: [0, 'Review count cannot be negative'],
+    },
+    ratingVersion: {
+      type: Number,
+      default: 0,
     },
   },
   {

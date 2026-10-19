@@ -8,7 +8,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
-  switchDemoRole: (role: 'customer' | 'karthik' | 'naveen') => Promise<void>;
+  switchDemoRole: (role: 'customer' | 'karthik' | 'naveen' | 'admin') => Promise<void>;
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
@@ -34,6 +34,12 @@ export const DEMO_CREDENTIALS = import.meta.env.DEV
         email: 'naveen.electrical@example.com',
         password: 'DemoProvider2026!',
         role: 'provider' as const,
+      },
+      admin: {
+        name: 'Dwellio Administrator',
+        email: 'admin@dwellio.local',
+        password: 'DwellioAdmin2026!',
+        role: 'admin' as const,
       },
     }
   : undefined;
@@ -94,7 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const switchDemoRole = useCallback(async (roleKey: 'customer' | 'karthik' | 'naveen'): Promise<void> => {
+  const switchDemoRole = useCallback(async (roleKey: 'customer' | 'karthik' | 'naveen' | 'admin'): Promise<void> => {
     if (!import.meta.env.DEV || !DEMO_CREDENTIALS) {
       console.warn('Demo persona switching is disabled in production.');
       return;
