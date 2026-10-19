@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-dwellio-teal: #172B35;
+  --color-dwellio-mint: #B8D9CF;
+  --color-dwellio-ivory: #F6F4EC;
+}
+
+body {
+  margin: 0;
+  background-color: #F6F4EC;
+  color: #172B35;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
