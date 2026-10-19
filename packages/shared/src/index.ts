@@ -125,5 +125,96 @@ export interface PublicProviderData {
   createdAt: string;
 }
 
+// ----------------------------------------------------
+// Phase 6: Booking System & Service Scheduling Types
+// ----------------------------------------------------
 
+export type BookingStatus =
+  | 'requested'
+  | 'accepted'
+  | 'on_the_way'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled'
+  | 'rejected';
 
+export type BookingActorRole = 'customer' | 'provider' | 'admin';
+
+export interface BookingStatusHistoryEntry {
+  actorId: string;
+  actorRole: BookingActorRole;
+  fromStatus: BookingStatus;
+  toStatus: BookingStatus;
+  timestamp: string;
+  reason?: string;
+}
+
+export interface ServiceAddress {
+  street: string;
+  city: string;
+  postalCode?: string;
+  landmark?: string;
+}
+
+export interface BookingData {
+  id: string;
+  customerId: string;
+  customer?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  providerId: string;
+  providerUserId: string;
+  provider?: {
+    id: string;
+    displayName: string;
+    phone: string;
+    serviceArea: string;
+    skills: string[];
+  };
+  serviceId: string;
+  service?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  categoryId: string;
+  category?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  scheduledStartTime: string;
+  scheduledEndTime: string;
+  address: ServiceAddress;
+  customerNotes?: string;
+  status: BookingStatus;
+  cancellationReason?: string;
+  rejectionReason?: string;
+  statusHistory: BookingStatusHistoryEntry[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateBookingPayload {
+  serviceId: string;
+  providerId: string;
+  scheduledStartTime: string;
+  scheduledEndTime: string;
+  address: ServiceAddress;
+  customerNotes?: string;
+}
+
+export interface CancelBookingPayload {
+  reason?: string;
+}
+
+export interface RejectBookingPayload {
+  reason?: string;
+}
+
+export interface UpdateBookingStatusPayload {
+  status: 'on_the_way' | 'in_progress' | 'completed' | 'cancelled';
+  reason?: string;
+}

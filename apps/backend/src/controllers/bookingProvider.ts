@@ -1,0 +1,444 @@
+import { Request, Response } from 'express';
+import { Types } from 'mongoose';
+import {
+  ApiResponse,
+  BookingData,
+  RejectBookingPayload,
+  UpdateBookingStatusPayload,
+  BookingStatus,
+} from '@dwellio/shared';
+import { Booking } from '../models/Booking';
+import { formatBookingDto, findConflictingProviderBooking } from '../utils/booking';
+
+/**
+ * Valid allowed status transitions for service providers
+ */
+const ALLOWED_PROVIDER_TRANSITIONS: Record<string, BookingStatus[]> = {
+  accepted: ['on_the_way', 'cancelled'],
+  on_the_way: ['in_progress'],
+  in_progress: ['completed'],
+};
+
+/**
+ * Provider: List all bookings assigned to the authenticated approved provider
+ * GET /api/provider/bookings
+ */
+export const getProviderBookings = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.providerProfile) {
+      res.status(403).json({ success: false, message: 'Provider profile required.' });
+      return;
+    }
+
+    const { status } = req.query;
+    const filter: any = { providerId: req.providerProfile._id };
+
+    if (status && typeof status === 'string') {
+      filter.status = status;
+    }
+
+    const bookings = await Booking.find(filter)
+      .sort({ scheduledStartTime: 1, createdAt: -1 })
+      .populate('customerId', 'name email')
+      .populate('providerId', 'displayName phone serviceArea skills')
+      .populate('serviceId', 'name slug')
+      .populate('categoryId', 'name slug');
+
+    const dtoList = bookings.map(formatBookingDto);
+
+    const response: ApiResponse<BookingData[]> = {
+      success: true,
+      message: `Retrieved ${dtoList.length} provider bookings.`,
+      data: dtoList,
+    };
+    res.status(200).json(response);
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve provider bookings.',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Provider: Get details for a single assigned booking
+ * GET /api/provider/bookings/:id
+ */
+export const getProviderBookingById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.providerProfile) {
+      res.status(403).json({ success: false, message: 'Provider profile required.' });
+      return;
+    }
+
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id || !Types.ObjectId.isValid(id)) {
+      res.status(400).json({ success: false, message: 'Invalid booking ID format.' });
+      return;
+    }
+
+    const booking = await Booking.findById(id)
+      .populate('customerId', 'name email')
+      .populate('providerId', 'displayName phone serviceArea skills')
+      .populate('serviceId', 'name slug')
+      .populate('categoryId', 'name slug');
+
+    if (!booking) {
+      res.status(404).json({ success: false, message: 'Booking not found.' });
+      return;
+    }
+
+    // Provider ownership check
+    if (booking.providerId._id.toString() !== req.providerProfile._id.toString()) {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied: this booking is assigned to a different service provider.',
+      });
+      return;
+    }
+
+    const response: ApiResponse<BookingData> = {
+      success: true,
+      message: 'Booking details retrieved successfully.',
+      data: formatBookingDto(booking),
+    };
+    res.status(200).json(response);
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve booking details.',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Provider: Accept a requested booking with atomic overlap check
+ * PATCH /api/provider/bookings/:id/accept
+ */
+export const acceptBooking = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user || !req.providerProfile) {
+      res.status(403).json({ success: false, message: 'Approved provider credentials required.' });
+      return;
+    }
+
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id || !Types.ObjectId.isValid(id)) {
+      res.status(400).json({ success: false, message: 'Invalid booking ID format.' });
+      return;
+    }
+
+    const booking = await Booking.findById(id);
+    if (!booking) {
+      res.status(404).json({ success: false, message: 'Booking not found.' });
+      return;
+    }
+
+    // Provider ownership verification
+    if (booking.providerId.toString() !== req.providerProfile._id.toString()) {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied: you cannot accept a booking assigned to another provider.',
+      });
+      return;
+    }
+
+    if (booking.status !== 'requested') {
+      res.status(400).json({
+        success: false,
+        message: `Cannot accept booking with status '${booking.status}'. Only 'requested' bookings can be accepted.`,
+      });
+      return;
+    }
+
+    // 1. Conflict check before acceptance
+    const conflict = await findConflictingProviderBooking(
+      req.providerProfile._id,
+      booking.scheduledStartTime,
+      booking.scheduledEndTime,
+      booking._id
+    );
+
+    if (conflict) {
+      res.status(409).json({
+        success: false,
+        message: 'Cannot accept booking: you already have an accepted or active job during this scheduled time slot.',
+      });
+      return;
+    }
+
+    // 2. Atomic state transition from 'requested' -> 'accepted'
+    const updated = await Booking.findOneAndUpdate(
+      {
+        _id: booking._id,
+        providerId: req.providerProfile._id,
+        status: 'requested', // Guarantees status hasn't changed concurrently
+      },
+      {
+        $set: { status: 'accepted' },
+        $push: {
+          statusHistory: {
+            actorId: req.user._id,
+            actorRole: 'provider',
+            fromStatus: 'requested',
+            toStatus: 'accepted',
+            timestamp: new Date(),
+            reason: 'Booking accepted by service provider',
+          },
+        },
+      },
+      { returnDocument: 'after' }
+    )
+      .populate('customerId', 'name email')
+      .populate('providerId', 'displayName phone serviceArea skills')
+      .populate('serviceId', 'name slug')
+      .populate('categoryId', 'name slug');
+
+    if (!updated) {
+      res.status(409).json({
+        success: false,
+        message: 'Booking was concurrently modified or already responded to.',
+      });
+      return;
+    }
+
+    // 3. Double-check for concurrent race-condition overlap
+    const raceConflict = await findConflictingProviderBooking(
+      req.providerProfile._id,
+      updated.scheduledStartTime,
+      updated.scheduledEndTime,
+      updated._id
+    );
+
+    if (raceConflict) {
+      // Revert this acceptance due to race condition
+      await Booking.findByIdAndUpdate(updated._id, {
+        $set: { status: 'requested' },
+        $pop: { statusHistory: 1 },
+      });
+
+      res.status(409).json({
+        success: false,
+        message: 'A schedule conflict occurred due to simultaneous booking acceptances. The slot is occupied.',
+      });
+      return;
+    }
+
+    const response: ApiResponse<BookingData> = {
+      success: true,
+      message: 'Booking successfully accepted.',
+      data: formatBookingDto(updated),
+    };
+    res.status(200).json(response);
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to accept booking.',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Provider: Reject a requested booking
+ * PATCH /api/provider/bookings/:id/reject
+ */
+export const rejectBooking = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user || !req.providerProfile) {
+      res.status(403).json({ success: false, message: 'Approved provider credentials required.' });
+      return;
+    }
+
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { reason }: RejectBookingPayload = req.body || {};
+
+    if (!id || !Types.ObjectId.isValid(id)) {
+      res.status(400).json({ success: false, message: 'Invalid booking ID format.' });
+      return;
+    }
+
+    const booking = await Booking.findById(id);
+    if (!booking) {
+      res.status(404).json({ success: false, message: 'Booking not found.' });
+      return;
+    }
+
+    if (booking.providerId.toString() !== req.providerProfile._id.toString()) {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied: this booking is assigned to a different provider.',
+      });
+      return;
+    }
+
+    if (booking.status !== 'requested') {
+      res.status(400).json({
+        success: false,
+        message: `Cannot decline booking with status '${booking.status}'. Only 'requested' bookings can be declined.`,
+      });
+      return;
+    }
+
+    const rejectionText = reason?.trim() || 'Declined by service professional';
+
+    const updated = await Booking.findOneAndUpdate(
+      {
+        _id: booking._id,
+        providerId: req.providerProfile._id,
+        status: 'requested',
+      },
+      {
+        $set: {
+          status: 'rejected',
+          rejectionReason: rejectionText,
+        },
+        $push: {
+          statusHistory: {
+            actorId: req.user._id,
+            actorRole: 'provider',
+            fromStatus: 'requested',
+            toStatus: 'rejected',
+            timestamp: new Date(),
+            reason: rejectionText,
+          },
+        },
+      },
+      { returnDocument: 'after' }
+    )
+      .populate('customerId', 'name email')
+      .populate('providerId', 'displayName phone serviceArea skills')
+      .populate('serviceId', 'name slug')
+      .populate('categoryId', 'name slug');
+
+    if (!updated) {
+      res.status(409).json({
+        success: false,
+        message: 'Booking was concurrently modified or already responded to.',
+      });
+      return;
+    }
+
+    const response: ApiResponse<BookingData> = {
+      success: true,
+      message: 'Booking has been declined.',
+      data: formatBookingDto(updated),
+    };
+    res.status(200).json(response);
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to decline booking.',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Provider: Update status for an active booking (on_the_way -> in_progress -> completed, or cancelled)
+ * PATCH /api/provider/bookings/:id/status
+ */
+export const updateBookingStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user || !req.providerProfile) {
+      res.status(403).json({ success: false, message: 'Approved provider credentials required.' });
+      return;
+    }
+
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { status: targetStatus, reason }: UpdateBookingStatusPayload = req.body || {};
+
+    if (!id || !Types.ObjectId.isValid(id)) {
+      res.status(400).json({ success: false, message: 'Invalid booking ID format.' });
+      return;
+    }
+
+    if (!targetStatus) {
+      res.status(400).json({ success: false, message: 'Target status is required.' });
+      return;
+    }
+
+    const booking = await Booking.findById(id);
+    if (!booking) {
+      res.status(404).json({ success: false, message: 'Booking not found.' });
+      return;
+    }
+
+    if (booking.providerId.toString() !== req.providerProfile._id.toString()) {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied: this booking is assigned to a different provider.',
+      });
+      return;
+    }
+
+    // Verify allowed transitions
+    const allowedTargets = ALLOWED_PROVIDER_TRANSITIONS[booking.status] || [];
+    if (!allowedTargets.includes(targetStatus)) {
+      res.status(400).json({
+        success: false,
+        message: `Invalid status transition: cannot move from '${booking.status}' to '${targetStatus}'. Allowed next states: [${allowedTargets.join(', ')}].`,
+      });
+      return;
+    }
+
+    const statusReasonText = reason?.trim() || `Status updated to ${targetStatus}`;
+
+    const updateFields: any = {
+      status: targetStatus,
+    };
+
+    if (targetStatus === 'cancelled') {
+      updateFields.cancellationReason = statusReasonText;
+    }
+
+    const updated = await Booking.findOneAndUpdate(
+      {
+        _id: booking._id,
+        providerId: req.providerProfile._id,
+        status: booking.status, // Optimistic concurrency check
+      },
+      {
+        $set: updateFields,
+        $push: {
+          statusHistory: {
+            actorId: req.user._id,
+            actorRole: 'provider',
+            fromStatus: booking.status,
+            toStatus: targetStatus,
+            timestamp: new Date(),
+            reason: statusReasonText,
+          },
+        },
+      },
+      { returnDocument: 'after' }
+    )
+      .populate('customerId', 'name email')
+      .populate('providerId', 'displayName phone serviceArea skills')
+      .populate('serviceId', 'name slug')
+      .populate('categoryId', 'name slug');
+
+    if (!updated) {
+      res.status(409).json({
+        success: false,
+        message: 'Booking status was concurrently updated by another process. Please refresh.',
+      });
+      return;
+    }
+
+    const response: ApiResponse<BookingData> = {
+      success: true,
+      message: `Booking status successfully updated to '${targetStatus}'.`,
+      data: formatBookingDto(updated),
+    };
+    res.status(200).json(response);
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update booking status.',
+      error: error.message,
+    });
+  }
+};

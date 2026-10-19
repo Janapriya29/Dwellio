@@ -196,6 +196,21 @@ export const seedCatalog = async (): Promise<void> => {
       }
     }
 
+    // Seed sample demo customer
+    const customerEmail = 'customer@example.com';
+    let demoCustomer = await User.findOne({ email: customerEmail });
+    if (!demoCustomer) {
+      const customerHash = await hashPassword('DemoCustomer2026!');
+      demoCustomer = await new User({
+        name: 'Pooja Sharma',
+        email: customerEmail,
+        passwordHash: customerHash,
+        role: 'customer',
+        isActive: true,
+      }).save();
+      console.log('[Catalog Seed] Created demo customer: Pooja Sharma (customer@example.com)');
+    }
+
     console.log('[Catalog Seed] Seeding completed successfully.');
     await disconnectDatabase();
   } catch (error) {

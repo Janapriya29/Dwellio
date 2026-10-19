@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RoomDetailPanel } from '../RoomDetailPanel';
+import { AuthProvider } from '../../../context/AuthContext';
 import { PublicProviderData, CategoryData, ServiceData } from '@dwellio/shared';
 
 const mockCategory: CategoryData = {
@@ -50,15 +51,17 @@ const mockProviders: PublicProviderData[] = [
 describe('RoomDetailPanel Component', () => {
   it('renders room title, description, and available service chips', () => {
     render(
-      <RoomDetailPanel
-        selectedRoom="living"
-        categories={[mockCategory]}
-        services={mockServices}
-        providers={mockProviders}
-        isLoading={false}
-        error={null}
-        onRetry={vi.fn()}
-      />
+      <AuthProvider>
+        <RoomDetailPanel
+          selectedRoom="living"
+          categories={[mockCategory]}
+          services={mockServices}
+          providers={mockProviders}
+          isLoading={false}
+          error={null}
+          onRetry={vi.fn()}
+        />
+      </AuthProvider>
     );
 
     expect(screen.getByText('Living Room & Electrical')).toBeInTheDocument();
@@ -68,15 +71,17 @@ describe('RoomDetailPanel Component', () => {
 
   it('renders loading state when isLoading is true', () => {
     render(
-      <RoomDetailPanel
-        selectedRoom="living"
-        categories={[]}
-        services={[]}
-        providers={[]}
-        isLoading={true}
-        error={null}
-        onRetry={vi.fn()}
-      />
+      <AuthProvider>
+        <RoomDetailPanel
+          selectedRoom="living"
+          categories={[]}
+          services={[]}
+          providers={[]}
+          isLoading={true}
+          error={null}
+          onRetry={vi.fn()}
+        />
+      </AuthProvider>
     );
 
     expect(screen.getByText(/approved professionals/i)).toHaveTextContent('Approved Professionals (...)');
@@ -85,15 +90,17 @@ describe('RoomDetailPanel Component', () => {
   it('renders error banner and retry button on network error', () => {
     const onRetry = vi.fn();
     render(
-      <RoomDetailPanel
-        selectedRoom="living"
-        categories={[]}
-        services={[]}
-        providers={[]}
-        isLoading={false}
-        error="Network timeout reaching catalog service"
-        onRetry={onRetry}
-      />
+      <AuthProvider>
+        <RoomDetailPanel
+          selectedRoom="living"
+          categories={[]}
+          services={[]}
+          providers={[]}
+          isLoading={false}
+          error="Network timeout reaching catalog service"
+          onRetry={onRetry}
+        />
+      </AuthProvider>
     );
 
     expect(screen.getByText('Failed to load verified professionals')).toBeInTheDocument();
@@ -106,15 +113,17 @@ describe('RoomDetailPanel Component', () => {
 
   it('renders empty state message when no providers exist for the room', () => {
     render(
-      <RoomDetailPanel
-        selectedRoom="roof"
-        categories={[]}
-        services={[]}
-        providers={[]}
-        isLoading={false}
-        error={null}
-        onRetry={vi.fn()}
-      />
+      <AuthProvider>
+        <RoomDetailPanel
+          selectedRoom="roof"
+          categories={[]}
+          services={[]}
+          providers={[]}
+          isLoading={false}
+          error={null}
+          onRetry={vi.fn()}
+        />
+      </AuthProvider>
     );
 
     expect(
@@ -122,17 +131,19 @@ describe('RoomDetailPanel Component', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders provider card with verification status and triggers Phase 6 modal on Book', () => {
+  it('renders provider card with verification status and triggers BookingModal on Book', () => {
     render(
-      <RoomDetailPanel
-        selectedRoom="living"
-        categories={[mockCategory]}
-        services={mockServices}
-        providers={mockProviders}
-        isLoading={false}
-        error={null}
-        onRetry={vi.fn()}
-      />
+      <AuthProvider>
+        <RoomDetailPanel
+          selectedRoom="living"
+          categories={[mockCategory]}
+          services={mockServices}
+          providers={mockProviders}
+          isLoading={false}
+          error={null}
+          onRetry={vi.fn()}
+        />
+      </AuthProvider>
     );
 
     expect(screen.getByText('Naveen Kumar')).toBeInTheDocument();
@@ -143,15 +154,13 @@ describe('RoomDetailPanel Component', () => {
     const bookButton = screen.getByRole('button', { name: 'Book' });
     fireEvent.click(bookButton);
 
-    // Should display Phase 6 notice modal without simulating progress
-    expect(screen.getByText('Booking Workflow — Phase 6')).toBeInTheDocument();
-    expect(
-      screen.getByText(/booking workflow, live scheduling, and real-time job progress tracking will be implemented in/i)
-    ).toBeInTheDocument();
+    // Should open real interactive BookingModal
+    expect(screen.getByRole('heading', { name: /book naveen kumar/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /confirm & request booking/i })).toBeInTheDocument();
 
     // Dismiss modal
-    const closeBtn = screen.getByRole('button', { name: 'Understood' });
-    fireEvent.click(closeBtn);
-    expect(screen.queryByText('Booking Workflow — Phase 6')).not.toBeInTheDocument();
+    const cancelBtn = screen.getByRole('button', { name: 'Cancel' });
+    fireEvent.click(cancelBtn);
+    expect(screen.queryByRole('heading', { name: /book naveen kumar/i })).not.toBeInTheDocument();
   });
 });

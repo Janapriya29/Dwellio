@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ServiceDiscoveryPage } from '../ServiceDiscoveryPage';
+import { AuthProvider } from '../../context/AuthContext';
 import * as catalogService from '../../services/catalogService';
 
 vi.mock('../../services/catalogService', () => ({
@@ -14,7 +15,7 @@ describe('ServiceDiscoveryPage Component', () => {
     vi.clearAllMocks();
   });
 
-  it('renders header, brand tagline, and initial living room state', async () => {
+  it('renders hero title and initial living room state', async () => {
     vi.mocked(catalogService.fetchCategories).mockResolvedValue([
       {
         id: 'cat-living',
@@ -50,10 +51,12 @@ describe('ServiceDiscoveryPage Component', () => {
       },
     ]);
 
-    render(<ServiceDiscoveryPage />);
+    render(
+      <AuthProvider>
+        <ServiceDiscoveryPage />
+      </AuthProvider>
+    );
 
-    expect(screen.getByText('Dwellio')).toBeInTheDocument();
-    expect(screen.getByText('Your Home, in Good Hands.')).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: /pick a room\. see who's verified to fix it\./i })
     ).toBeInTheDocument();
@@ -80,7 +83,11 @@ describe('ServiceDiscoveryPage Component', () => {
       },
     ]);
 
-    render(<ServiceDiscoveryPage />);
+    render(
+      <AuthProvider>
+        <ServiceDiscoveryPage />
+      </AuthProvider>
+    );
 
     // Click on Bathroom pill
     const [bathPill] = screen.getAllByRole('button', { name: 'Bathroom' });
