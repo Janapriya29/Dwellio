@@ -57,13 +57,41 @@ export const formatReviewDto = (review: any): ReviewData => {
 };
 
 /**
+ * Minimizes customer identity for public-facing review displays.
+ * Protects customer privacy by converting full names into a first-name + last-initial format:
+ * - "Alice Smith" -> "Alice S."
+ * - "Alice Mary Smith" -> "Alice S."
+ * - "Alice" -> "Alice"
+ * - "" / undefined / null -> "Verified Customer"
+ * - Trims whitespace safely
+ */
+export const maskCustomerName = (rawName?: string | null): string => {
+  if (!rawName || typeof rawName !== 'string') {
+    return 'Verified Customer';
+  }
+  const trimmed = rawName.trim();
+  if (!trimmed) {
+    return 'Verified Customer';
+  }
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) {
+    return parts[0];
+  }
+  const firstName = parts[0];
+  const lastInitial = parts[parts.length - 1].charAt(0).toUpperCase();
+  return `${firstName} ${lastInitial}.`;
+};
+
+/**
  * Maps an internal Review document into a safe, public review DTO for discovery and public profiles.
- * Never exposes private customer identifiers or email addresses.
+ * Never exposes private customer identifiers, email addresses, phone numbers, or full surnames.
  */
 export const formatPublicReviewDto = (review: any): PublicReviewData => {
-  const customerName = review.customerId && typeof review.customerId === 'object' && 'name' in review.customerId
+  const rawCustomerName = review.customerId && typeof review.customerId === 'object' && 'name' in review.customerId
     ? review.customerId.name
-    : 'Verified Customer';
+    : undefined;
+
+  const customerName = maskCustomerName(rawCustomerName);
 
   const serviceName = review.serviceId && typeof review.serviceId === 'object' && 'name' in review.serviceId
     ? review.serviceId.name

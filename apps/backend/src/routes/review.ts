@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth, requireApprovedProvider } from '../middleware/auth';
+import { catalogDiscoveryRateLimiter } from '../middleware/rateLimiter';
 import {
   createBookingReview,
   getBookingReview,
@@ -18,7 +19,7 @@ reviewRouter.get('/bookings/:id/review', requireAuth, getBookingReview);
 // ----------------------------------------------------
 // Public Provider Reviews Endpoint
 // ----------------------------------------------------
-reviewRouter.get('/providers/:id/reviews', getProviderReviews);
+reviewRouter.get('/providers/:id/reviews', catalogDiscoveryRateLimiter, getProviderReviews);
 
 // ----------------------------------------------------
 // Provider Review Reply Endpoint

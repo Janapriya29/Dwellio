@@ -13,8 +13,7 @@ import {
   AuditLogAction,
   BookingStatus,
 } from '@dwellio/shared';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+import { API_BASE_URL, createApiUrl } from '../config/api';
 
 const authHeaders = (token: string) => ({
   'Content-Type': 'application/json',
@@ -59,7 +58,7 @@ export const fetchAdminApplications = async (
   token: string,
   params?: { page?: number; limit?: number; status?: 'pending' | 'approved' | 'rejected' }
 ): Promise<PaginatedResponse<AdminProviderApplicationItem>> => {
-  const url = new URL(`${API_BASE_URL}/admin/providers/applications`);
+  const url = createApiUrl('/admin/providers/applications');
   if (params?.page) url.searchParams.append('page', params.page.toString());
   if (params?.limit) url.searchParams.append('limit', params.limit.toString());
   if (params?.status) url.searchParams.append('status', params.status);
@@ -212,7 +211,7 @@ export const fetchAdminServices = async (
   token: string,
   categoryId?: string
 ): Promise<ServiceData[]> => {
-  const url = new URL(`${API_BASE_URL}/admin/catalog/services`);
+  const url = createApiUrl('/admin/catalog/services');
   if (categoryId) url.searchParams.append('categoryId', categoryId);
 
   const res = await fetch(url.toString(), {
@@ -312,7 +311,7 @@ export const fetchAdminBookings = async (
     endDate?: string;
   }
 ): Promise<PaginatedResponse<AdminBookingItem>> => {
-  const url = new URL(`${API_BASE_URL}/admin/bookings`);
+  const url = createApiUrl('/admin/bookings');
   if (params?.page) url.searchParams.append('page', params.page.toString());
   if (params?.limit) url.searchParams.append('limit', params.limit.toString());
   if (params?.status) url.searchParams.append('status', params.status);
@@ -366,7 +365,7 @@ export const fetchAdminReviews = async (
     isPublished?: boolean;
   }
 ): Promise<PaginatedResponse<AdminReviewItem>> => {
-  const url = new URL(`${API_BASE_URL}/admin/reviews`);
+  const url = createApiUrl('/admin/reviews');
   if (params?.page) url.searchParams.append('page', params.page.toString());
   if (params?.limit) url.searchParams.append('limit', params.limit.toString());
   if (params?.isPublished !== undefined) {
@@ -423,7 +422,7 @@ export const fetchAdminAuditLogs = async (
     action?: AuditLogAction;
   }
 ): Promise<PaginatedResponse<AuditLogData>> => {
-  const url = new URL(`${API_BASE_URL}/admin/audit-logs`);
+  const url = createApiUrl('/admin/audit-logs');
   if (params?.page) url.searchParams.append('page', params.page.toString());
   if (params?.limit) url.searchParams.append('limit', params.limit.toString());
   if (params?.action) url.searchParams.append('action', params.action);

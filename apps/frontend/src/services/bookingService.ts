@@ -6,8 +6,7 @@ import {
   RejectBookingPayload,
   UpdateBookingStatusPayload,
 } from '@dwellio/shared';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+import { API_BASE_URL, createApiUrl } from '../config/api';
 
 const authHeaders = (token?: string) => ({
   'Content-Type': 'application/json',
@@ -42,7 +41,7 @@ export const fetchCustomerBookings = async (
   token: string,
   status?: string
 ): Promise<BookingData[]> => {
-  const url = new URL(`${API_BASE_URL}/bookings`);
+  const url = createApiUrl('/bookings');
   if (status) {
     url.searchParams.append('status', status);
   }
@@ -110,7 +109,7 @@ export const fetchProviderBookings = async (
   token: string,
   status?: string
 ): Promise<BookingData[]> => {
-  const url = new URL(`${API_BASE_URL}/provider/bookings`);
+  const url = createApiUrl('/provider/bookings');
   if (status) {
     url.searchParams.append('status', status);
   }

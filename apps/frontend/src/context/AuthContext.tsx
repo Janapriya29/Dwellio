@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { SafeUser, ApiResponse, AuthResponseData } from '@dwellio/shared';
+import { API_BASE_URL } from '../config/api';
 
 interface AuthContextType {
   user: SafeUser | null;
@@ -10,8 +11,6 @@ interface AuthContextType {
   logout: () => void;
   switchDemoRole: (role: 'customer' | 'karthik' | 'naveen' | 'admin') => Promise<void>;
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 

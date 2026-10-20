@@ -5,8 +5,7 @@ import {
   ReviewReplyPayload,
   PaginatedReviewsData,
 } from '@dwellio/shared';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+import { API_BASE_URL, createApiUrl } from '../config/api';
 
 const authHeaders = (token?: string) => ({
   'Content-Type': 'application/json',
@@ -67,7 +66,7 @@ export const fetchProviderReviews = async (
   page = 1,
   limit = 10
 ): Promise<PaginatedReviewsData> => {
-  const url = new URL(`${API_BASE_URL}/providers/${providerId}/reviews`);
+  const url = createApiUrl(`/providers/${providerId}/reviews`);
   url.searchParams.append('page', String(page));
   url.searchParams.append('limit', String(limit));
 

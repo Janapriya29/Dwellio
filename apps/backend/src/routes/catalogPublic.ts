@@ -4,9 +4,10 @@ import {
   getPublicServices,
   getPublicProviders,
 } from '../controllers/catalogPublic';
+import { catalogDiscoveryRateLimiter } from '../middleware/rateLimiter';
 
 export const catalogPublicRouter = Router();
 
-catalogPublicRouter.get('/catalog/categories', getPublicCategories);
-catalogPublicRouter.get('/catalog/services', getPublicServices);
-catalogPublicRouter.get('/catalog/providers', getPublicProviders);
+catalogPublicRouter.get('/catalog/categories', catalogDiscoveryRateLimiter, getPublicCategories);
+catalogPublicRouter.get('/catalog/services', catalogDiscoveryRateLimiter, getPublicServices);
+catalogPublicRouter.get('/catalog/providers', catalogDiscoveryRateLimiter, getPublicProviders);

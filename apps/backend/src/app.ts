@@ -10,6 +10,7 @@ import { catalogPublicRouter } from './routes/catalogPublic';
 import { bookingRouter } from './routes/booking';
 import { reviewRouter } from './routes/review';
 import { notificationRouter } from './routes/notification';
+import { generalApiRateLimiter } from './middleware/rateLimiter';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
 
 export const createApp = (customRouter?: express.Router): Application => {
@@ -39,6 +40,9 @@ export const createApp = (customRouter?: express.Router): Application => {
   // 3. Explicit request body size limits (15kb cap)
   app.use(express.json({ limit: '15kb' }));
   app.use(express.urlencoded({ extended: true, limit: '15kb' }));
+
+  // 4. General API Rate Limiter across /api (automatically preserves health checks)
+  app.use('/api', generalApiRateLimiter);
 
   // API Routes
   app.use('/api', healthRouter);

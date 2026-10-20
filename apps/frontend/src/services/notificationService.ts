@@ -5,8 +5,7 @@ import {
   MarkAllReadResponseData,
   PaginationMeta,
 } from '@dwellio/shared';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+import { API_BASE_URL, createApiUrl } from '../config/api';
 
 const authHeaders = (token: string) => ({
   'Content-Type': 'application/json',
@@ -25,7 +24,7 @@ export const fetchNotifications = async (
   token: string,
   params?: { page?: number; limit?: number; unreadOnly?: boolean }
 ): Promise<PaginatedNotifications> => {
-  const url = new URL(`${API_BASE_URL}/notifications`);
+  const url = createApiUrl('/notifications');
   if (params?.page) url.searchParams.append('page', params.page.toString());
   if (params?.limit) url.searchParams.append('limit', params.limit.toString());
   if (params?.unreadOnly !== undefined) {

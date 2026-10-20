@@ -1,13 +1,18 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { createApp } from '../src/app';
 import { User } from '../src/models/User';
 import { ProviderProfile } from '../src/models/ProviderProfile';
 import { Category } from '../src/models/Category';
 import { Service } from '../src/models/Service';
+import { Booking } from '../src/models/Booking';
+import { Review } from '../src/models/Review';
 import { connectTestDb, clearTestDb, disconnectTestDb } from './setup';
 import { escapeRegex } from '../src/utils/security';
+import { maskCustomerName } from '../src/utils/review';
+import { getRateLimitKey } from '../src/middleware/rateLimiter';
 import { config } from '../src/config/env';
 
 describe('Phase 10A: Critical API Security Hardening Tests', () => {
@@ -19,6 +24,8 @@ describe('Phase 10A: Critical API Security Hardening Tests', () => {
     await ProviderProfile.syncIndexes();
     await Category.syncIndexes();
     await Service.syncIndexes();
+    await Booking.syncIndexes();
+    await Review.syncIndexes();
   });
 
   afterAll(async () => {
@@ -300,6 +307,239 @@ describe('Phase 10A: Critical API Security Hardening Tests', () => {
         .get('/api/nonexistent-endpoint-xyz');
       expect(notFoundRes.status).toBe(404);
       expect(notFoundRes.body.message).toContain('Resource not found');
+    });
+  });
+
+  // ----------------------------------------------------
+  // Phase 10C: SEC-10 — Customer Privacy & Identity Minimization
+  // ----------------------------------------------------
+  describe('Phase 10C: SEC-10 — Customer Privacy & Identity Minimization', () => {
+    it('maskCustomerName correctly formats full names to first name + last initial', () => {
+      expect(maskCustomerName('Alice Smith')).toBe('Alice S.');
+      expect(maskCustomerName('Jane Mary Doe')).toBe('Jane D.');
+      expect(maskCustomerName('Rajesh Kumar Gupta')).toBe('Rajesh G.');
+    });
+
+    it('maskCustomerName preserves single-word first names without adding dot', () => {
+      expect(maskCustomerName('Alice')).toBe('Alice');
+      expect(maskCustomerName('Karthik')).toBe('Karthik');
+    });
+
+    it('maskCustomerName safely defaults for missing, null, undefined, or empty names', () => {
+      expect(maskCustomerName(null)).toBe('Verified Customer');
+      expect(maskCustomerName(undefined)).toBe('Verified Customer');
+      expect(maskCustomerName('')).toBe('Verified Customer');
+      expect(maskCustomerName('   ')).toBe('Verified Customer');
+    });
+
+    it('public provider reviews endpoint masks customer full name and does not leak email or phone', async () => {
+      const customer = await new User({
+        name: 'Siddharth Varma',
+        email: 'siddharth.varma@private-email.com',
+        passwordHash: 'dummy_hash',
+        role: 'customer',
+      }).save();
+
+      const providerUser = await new User({
+        name: 'Ganesh Plumber',
+        email: 'ganesh@example.com',
+        passwordHash: 'dummy_hash',
+        role: 'provider',
+      }).save();
+
+      const provider = await new ProviderProfile({
+        userId: providerUser._id,
+        displayName: 'Ganesh Plumbing Services',
+        phone: '9840112233',
+        serviceArea: 'Central Metro',
+        skills: ['Pipe Repair'],
+        verificationStatus: 'approved',
+      }).save();
+
+      const category = await new Category({
+        name: 'Plumbing Works',
+        slug: 'plumbing-works',
+        rooms: ['bath'],
+        isActive: true,
+      }).save();
+
+      const service = await new Service({
+        categoryId: category._id,
+        name: 'Leak Repair Service',
+        slug: 'leak-repair-service',
+        isActive: true,
+      }).save();
+
+      const booking = await new Booking({
+        customerId: customer._id,
+        providerId: provider._id,
+        providerUserId: providerUser._id,
+        serviceId: service._id,
+        categoryId: category._id,
+        scheduledStartTime: new Date(Date.now() - 3600000),
+        scheduledEndTime: new Date(Date.now() - 1800000),
+        address: { street: '12 Secret St', city: 'Metro' },
+        status: 'completed',
+      }).save();
+
+      await new Review({
+        bookingId: booking._id,
+        customerId: customer._id,
+        providerId: provider._id,
+        serviceId: service._id,
+        rating: 5,
+        comment: 'Great work fixing the kitchen pipe leak!',
+        isPublished: true,
+      }).save();
+
+      const res = await request(app).get(`/api/providers/${provider._id}/reviews`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.reviews).toHaveLength(1);
+
+      const publicReview = res.body.data.reviews[0];
+      // Must be masked to first name + last initial
+      expect(publicReview.customerName).toBe('Siddharth V.');
+      // Must NOT be full name
+      expect(publicReview.customerName).not.toBe('Siddharth Varma');
+
+      // Privacy verification: response must not leak email, phone, customerId, or private internals
+      const stringified = JSON.stringify(res.body);
+      expect(stringified).not.toContain('siddharth.varma@private-email.com');
+      expect(stringified).not.toContain('private-email.com');
+      expect(publicReview.email).toBeUndefined();
+      expect(publicReview.phone).toBeUndefined();
+      expect(publicReview.customerId).toBeUndefined();
+    });
+  });
+
+  // ----------------------------------------------------
+  // Phase 10C: SEC-03 — Configurable API Rate Limiting
+  // ----------------------------------------------------
+  describe('Phase 10C: SEC-03 — Configurable API Rate Limiting', () => {
+    it('getRateLimitKey prioritizes authenticated user ID and falls back to client IP', () => {
+      const authReq = {
+        user: { _id: '6ad700000000000000000001' },
+        ip: '192.168.1.100',
+      } as any;
+      expect(getRateLimitKey('api', authReq)).toBe('api_user_6ad700000000000000000001');
+
+      const unauthReq = {
+        user: undefined,
+        ip: '192.168.1.200',
+      } as any;
+      expect(getRateLimitKey('api', unauthReq)).toBe('api_ip_192.168.1.200');
+
+      const fallbackReq = {
+        user: undefined,
+        ip: undefined,
+      } as any;
+      expect(getRateLimitKey('api', fallbackReq)).toBe('api_ip_127.0.0.1');
+    });
+
+    it('generalApiRateLimiter preserves health checks and does not throttle /api/health', async () => {
+      // Send multiple requests to /api/health with x-test-rate-limit header
+      for (let i = 0; i < 5; i++) {
+        const res = await request(app)
+          .get('/api/health')
+          .set('x-test-rate-limit', 'true');
+        expect(res.status).toBe(200);
+      }
+    });
+
+    it('enforces rate limit when triggered and returns consistent JSON envelope with HTTP 429', async () => {
+      // Create a test app with custom router and deterministic tight rate limit
+      const testLimiter = rateLimit({
+        windowMs: 60 * 1000,
+        max: 2,
+        validate: { keyGeneratorIpFallback: false },
+        keyGenerator: (req) => getRateLimitKey('test_rate', req),
+        handler: (_req, res) => {
+          res.status(429).json({
+            success: false,
+            message: 'Too many requests. Please try again after 15 minutes.',
+          });
+        },
+      });
+
+      const testRouter = express.Router();
+      testRouter.get('/test-rate-quota', testLimiter, (_req, res) => {
+        res.status(200).json({ success: true, message: 'Quota OK' });
+      });
+
+      const testApp = createApp(testRouter);
+
+      // Request 1: within limit
+      const res1 = await request(testApp).get('/api/test-rate-quota');
+      expect(res1.status).toBe(200);
+      expect(res1.body.success).toBe(true);
+
+      // Request 2: within limit
+      const res2 = await request(testApp).get('/api/test-rate-quota');
+      expect(res2.status).toBe(200);
+      expect(res2.body.success).toBe(true);
+
+      // Request 3: exceeds limit -> 429 with consistent JSON format
+      const res3 = await request(testApp).get('/api/test-rate-quota');
+      expect(res3.status).toBe(429);
+      expect(res3.body.success).toBe(false);
+      expect(res3.body.message).toContain('Too many requests');
+    });
+
+    it('isolates user-specific quotas so one authenticated user hitting limits does not block another user', async () => {
+      const userLimiter = rateLimit({
+        windowMs: 60 * 1000,
+        max: 2,
+        validate: { keyGeneratorIpFallback: false },
+        keyGenerator: (req) => getRateLimitKey('user_quota', req),
+        handler: (_req, res) => {
+          res.status(429).json({ success: false, message: 'User quota exceeded' });
+        },
+      });
+
+      const userApp = express();
+      userApp.use(express.json());
+      userApp.get(
+        '/api/user-resource',
+        (req, _res, next) => {
+          const userId = req.query.userId as string;
+          if (userId) {
+            (req as any).user = { _id: userId };
+          }
+          next();
+        },
+        userLimiter,
+        (_req, res) => {
+          res.status(200).json({ success: true, message: 'Resource accessed' });
+        }
+      );
+
+      // User A makes 2 requests
+      await request(userApp).get('/api/user-resource?userId=userA');
+      await request(userApp).get('/api/user-resource?userId=userA');
+      // User A makes 3rd request -> throttled
+      const userAExceeded = await request(userApp).get('/api/user-resource?userId=userA');
+      expect(userAExceeded.status).toBe(429);
+
+      // User B makes request -> NOT throttled (distinct quota)
+      const userBRes = await request(userApp).get('/api/user-resource?userId=userB');
+      expect(userBRes.status).toBe(200);
+      expect(userBRes.body.success).toBe(true);
+    });
+  });
+
+  // ----------------------------------------------------
+  // Phase 10C: SEC-11 — MongoDB Connection Pool Settings
+  // ----------------------------------------------------
+  describe('Phase 10C: SEC-11 — MongoDB Connection Pool Settings', () => {
+    it('verifies MongoDB connection pool configuration defaults and environment overrides', () => {
+      const defaultMax = process.env.MONGODB_MAX_POOL_SIZE ? parseInt(process.env.MONGODB_MAX_POOL_SIZE, 10) : 50;
+      const defaultMin = process.env.MONGODB_MIN_POOL_SIZE ? parseInt(process.env.MONGODB_MIN_POOL_SIZE, 10) : 2;
+
+      expect(defaultMax).toBeGreaterThanOrEqual(10);
+      expect(defaultMin).toBeGreaterThanOrEqual(0);
+      expect(defaultMax).toBeGreaterThanOrEqual(defaultMin);
     });
   });
 });

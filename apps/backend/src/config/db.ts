@@ -50,16 +50,35 @@ export const isDatabaseConnected = (): boolean => {
 };
 
 /**
- * Connect to MongoDB using the configured MONGO_URI.
+ * Connect to MongoDB using the configured MONGO_URI and connection pool options.
+ *
+ * Pool Configuration Architecture:
+ * - maxPoolSize (default 50): Restricts maximum concurrent sockets per process to prevent
+ *   connection exhaustion on MongoDB during traffic spikes, especially in multi-container setups.
+ * - minPoolSize (default 2): Maintains a warm baseline pool to eliminate TCP handshake latency.
+ * - serverSelectionTimeoutMS (5000ms): Fast failover detection during server unreachable events.
+ * - socketTimeoutMS (45000ms): Closes stalled/inactive sockets to prevent leaked connections.
+ * - maxIdleTimeMS (30000ms): Reclaims idle connections above minPoolSize after 30 seconds.
  */
 export const connectDatabase = async (): Promise<typeof mongoose> => {
   const targetUri = config.mongoUri;
   const safeUri = sanitizeMongoUri(targetUri);
 
+  const maxPoolSize = process.env.MONGODB_MAX_POOL_SIZE
+    ? parseInt(process.env.MONGODB_MAX_POOL_SIZE, 10)
+    : 50;
+  const minPoolSize = process.env.MONGODB_MIN_POOL_SIZE
+    ? parseInt(process.env.MONGODB_MIN_POOL_SIZE, 10)
+    : 2;
+
   try {
-    console.log(`[Database] Connecting to MongoDB at ${safeUri}...`);
+    console.log(`[Database] Connecting to MongoDB at ${safeUri} (pool: ${minPoolSize}-${maxPoolSize})...`);
     const conn = await mongoose.connect(targetUri, {
+      maxPoolSize,
+      minPoolSize,
       serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      maxIdleTimeMS: 30000,
     });
     console.log(`[Database] Successfully connected to MongoDB (${conn.connection.name || 'dwellio'}).`);
     return conn;
