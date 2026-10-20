@@ -112,3 +112,80 @@ npm run seed:admin
 ```
 *(In production, set `ADMIN_EMAIL` and `ADMIN_PASSWORD` (minimum 12 characters) as environment variables before executing).*
 
+---
+
+## 🐳 Containerized Deployment (Docker & Docker Compose)
+
+Dwellio includes full multi-stage Dockerfiles and an orchestrated `docker-compose.yml` for local container testing and production deployment.
+
+### 1. Prerequisites
+* **Docker Engine**: `v24+` (Docker Desktop on Windows/macOS, or Docker Engine on Linux)
+* **Docker Compose**: `v2+` (`docker compose`)
+
+### 2. Environment Setup
+Copy the template environment file:
+```bash
+cp .env.example .env
+```
+Configure `JWT_SECRET` in `.env` with a secure key of at least 32 characters in production.
+
+### 3. Build & Start Services
+Build container images and start the full stack in detached mode:
+```bash
+# Build images
+npm run docker:build
+
+# Launch services (MongoDB, Backend API, Frontend Nginx)
+npm run docker:up
+```
+
+### 4. Inspecting Health & Logs
+Check container status and healthcheck readiness:
+```bash
+# View service status and healthcheck states
+docker compose ps
+
+# Follow backend logs
+docker compose logs -f backend
+
+# Follow frontend reverse-proxy logs
+docker compose logs -f frontend
+```
+
+* **Frontend Application**: [http://localhost](http://localhost) (port 80)
+* **API Health Check**: [http://localhost/api/health](http://localhost/api/health) (routed via Nginx reverse proxy to backend)
+* **Backend Direct (Dev/Debug)**: [http://localhost:5000/api/health](http://localhost:5000/api/health)
+* **MongoDB (Local Dev Binding)**: `127.0.0.1:27017`
+
+### 5. Stopping Containers Safely
+Stop all services while preserving database data:
+```bash
+npm run docker:down
+```
+> [!IMPORTANT]
+> The persistent database is stored in the Docker named volume `dwellio_mongodb_data`. Do **not** use `docker compose down -v` unless you intentionally wish to delete all persistent database records.
+
+---
+
+## 🧪 Testing Suites
+
+```bash
+# Run backend and frontend unit & integration tests
+npm test
+
+# Run deployment smoke test suite
+npm run test:e2e:smoke
+
+# Run Playwright browser end-to-end tests (requires running frontend/stack)
+npm run test:e2e
+```
+
+---
+
+## ⚠️ Known Deployment Limitations & Security Notes
+
+1. **Build-Tooling Dev Dependencies (SEC-09):** `npm audit` reports 7 dev-dependency advisories in `tailwindcss@^3.4.17`'s build toolchain (`braces`, `postcss-selector-parser`). These exist exclusively in `devDependencies` used by Vite during development/bundling and are **not** present in production runtime. Upstream resolution requires migrating to `tailwindcss@4`, which is a breaking change and will be scheduled as a dedicated migration.
+2. **In-Memory Rate Limiting (SEC-03):** Express rate limits are held in process memory. In horizontally scaled multi-replica environments, a distributed Redis store (`rate-limit-redis`) is recommended.
+3. **TLS Termination:** The container stack listens on HTTP port 80. For production internet deployment, TLS/HTTPS termination should be configured at an external reverse proxy, cloud load balancer, or CDN (e.g. Cloudflare, AWS ALB, Let's Encrypt Nginx).
+
+

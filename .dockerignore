@@ -7,8 +7,13 @@
 **/.env.*
 !**/.env.example
 **/npm-debug.log*
+**/*.log
 **/coverage
 **/uploads
+**/.vscode
+**/.idea
 README.md
 docs/
 tests/e2e/
+test-results/
+playwright-report/
