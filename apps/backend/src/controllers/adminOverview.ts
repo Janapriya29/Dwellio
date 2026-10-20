@@ -6,6 +6,7 @@ import { Service } from '../models/Service';
 import { Booking } from '../models/Booking';
 import { Review } from '../models/Review';
 import { AuditLog } from '../models/AuditLog';
+import { sendInternalError } from '../utils/security';
 
 const ALL_BOOKING_STATUSES: BookingStatus[] = [
   'requested',
@@ -103,9 +104,6 @@ export const getAdminOverview = async (_req: Request, res: Response): Promise<vo
 
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error?.message || 'Failed to retrieve platform overview.',
-    });
+    sendInternalError(res, 'AdminOverview.getAdminOverview', error, 'Failed to retrieve platform overview.');
   }
 };

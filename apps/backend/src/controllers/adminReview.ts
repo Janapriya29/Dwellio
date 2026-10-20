@@ -9,6 +9,7 @@ import {
 import { Review } from '../models/Review';
 import { AuditLog } from '../models/AuditLog';
 import { recalculateProviderRating, formatAdminReviewDto } from '../utils/review';
+import { sendInternalError } from '../utils/security';
 
 /**
  * List Reviews for Administrative Moderation
@@ -90,10 +91,7 @@ export const listAdminReviews = async (req: Request, res: Response): Promise<voi
 
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error?.message || 'Failed to retrieve reviews.',
-    });
+    sendInternalError(res, 'AdminReview.listAdminReviews', error, 'Failed to retrieve reviews.');
   }
 };
 
@@ -195,9 +193,6 @@ export const moderateReview = async (req: Request, res: Response): Promise<void>
 
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error?.message || 'Failed to moderate review.',
-    });
+    sendInternalError(res, 'AdminReview.moderateReview', error, 'Failed to moderate review.');
   }
 };

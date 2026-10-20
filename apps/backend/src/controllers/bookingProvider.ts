@@ -15,6 +15,7 @@ import {
   releaseProviderSlots,
 } from '../utils/booking';
 import { sendInAppNotification } from '../utils/notification';
+import { sendInternalError } from '../utils/security';
 
 /**
  * Valid allowed status transitions for service providers
@@ -59,11 +60,7 @@ export const getProviderBookings = async (req: Request, res: Response): Promise<
     };
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve provider bookings.',
-      error: error.message,
-    });
+    sendInternalError(res, 'BookingProvider.getProviderBookings', error, 'Failed to retrieve provider bookings.');
   }
 };
 
@@ -111,11 +108,7 @@ export const getProviderBookingById = async (req: Request, res: Response): Promi
     };
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve booking details.',
-      error: error.message,
-    });
+    sendInternalError(res, 'BookingProvider.getProviderBookingById', error, 'Failed to retrieve booking details.');
   }
 };
 
@@ -124,6 +117,7 @@ export const getProviderBookingById = async (req: Request, res: Response): Promi
  * PATCH /api/provider/bookings/:id/accept
  */
 export const acceptBooking = async (req: Request, res: Response): Promise<void> => {
+  let bookingIdToRelease: string | undefined;
   try {
     if (!req.user || !req.providerProfile) {
       res.status(403).json({ success: false, message: 'Approved provider credentials required.' });
@@ -191,6 +185,9 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // Mark slot reservations as pending commit for this booking
+    bookingIdToRelease = booking._id.toString();
+
     // 3. Atomic state transition from 'requested' -> 'accepted'
     const updated = await Booking.findOneAndUpdate(
       {
@@ -221,12 +218,16 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
     if (!updated) {
       // Concurrently modified or cancelled: release acquired slot reservations
       await releaseProviderSlots(booking._id);
+      bookingIdToRelease = undefined;
       res.status(409).json({
         success: false,
         message: 'Booking was concurrently modified or already responded to.',
       });
       return;
     }
+
+    // Booking successfully accepted: slots are now legitimately held
+    bookingIdToRelease = undefined;
 
     // Trigger in-app notification to customer (best-effort, non-blocking)
     const providerName = (updated.providerId as any)?.displayName || req.providerProfile.displayName || 'Your service professional';
@@ -247,11 +248,10 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
     };
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to accept booking.',
-      error: error.message,
-    });
+    if (bookingIdToRelease) {
+      await releaseProviderSlots(bookingIdToRelease).catch(() => {});
+    }
+    sendInternalError(res, 'BookingProvider.acceptBooking', error, 'Failed to accept booking.');
   }
 };
 
@@ -357,11 +357,7 @@ export const rejectBooking = async (req: Request, res: Response): Promise<void> 
     };
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to decline booking.',
-      error: error.message,
-    });
+    sendInternalError(res, 'BookingProvider.rejectBooking', error, 'Failed to decline booking.');
   }
 };
 
@@ -512,10 +508,6 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
     };
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update booking status.',
-      error: error.message,
-    });
+    sendInternalError(res, 'BookingProvider.updateBookingStatus', error, 'Failed to update booking status.');
   }
 };

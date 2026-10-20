@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { ApiResponse, NotificationData, NotificationUnreadCountData, MarkAllReadResponseData, PaginationMeta } from '@dwellio/shared';
 import { Notification } from '../models/Notification';
 import { formatNotificationDto } from '../utils/notification';
+import { sendInternalError } from '../utils/security';
 
 /**
  * List paginated notifications for the authenticated recipient
@@ -52,11 +53,7 @@ export const listNotifications = async (req: Request, res: Response): Promise<vo
 
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve notifications.',
-      error: error.message,
-    });
+    sendInternalError(res, 'Notification.listNotifications', error, 'Failed to retrieve notifications.');
   }
 };
 
@@ -87,11 +84,7 @@ export const getUnreadNotificationCount = async (req: Request, res: Response): P
 
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve unread notification count.',
-      error: error.message,
-    });
+    sendInternalError(res, 'Notification.getUnreadNotificationCount', error, 'Failed to retrieve unread notification count.');
   }
 };
 
@@ -138,11 +131,7 @@ export const markNotificationAsRead = async (req: Request, res: Response): Promi
 
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to mark notification as read.',
-      error: error.message,
-    });
+    sendInternalError(res, 'Notification.markNotificationAsRead', error, 'Failed to mark notification as read.');
   }
 };
 
@@ -181,10 +170,6 @@ export const markAllNotificationsAsRead = async (req: Request, res: Response): P
 
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to mark all notifications as read.',
-      error: error.message,
-    });
+    sendInternalError(res, 'Notification.markAllNotificationsAsRead', error, 'Failed to mark all notifications as read.');
   }
 };

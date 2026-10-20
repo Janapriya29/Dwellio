@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ApiResponse, PaginationMeta, AuditLogData, AuditLogAction } from '@dwellio/shared';
 import { AuditLog } from '../models/AuditLog';
+import { sendInternalError } from '../utils/security';
 
 const VALID_ACTIONS: AuditLogAction[] = [
   'PROVIDER_APPLICATION_APPROVED',
@@ -79,9 +80,6 @@ export const listAuditLogs = async (req: Request, res: Response): Promise<void> 
 
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error?.message || 'Failed to retrieve audit logs.',
-    });
+    sendInternalError(res, 'AdminAudit.listAuditLogs', error, 'Failed to retrieve audit logs.');
   }
 };

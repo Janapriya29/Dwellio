@@ -9,6 +9,7 @@ import {
 } from '@dwellio/shared';
 import { Booking } from '../models/Booking';
 import { formatBookingDto } from '../utils/booking';
+import { sendInternalError } from '../utils/security';
 
 const VALID_STATUSES: BookingStatus[] = [
   'requested',
@@ -106,10 +107,7 @@ export const listAdminBookings = async (req: Request, res: Response): Promise<vo
 
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error?.message || 'Failed to retrieve bookings.',
-    });
+    sendInternalError(res, 'AdminBooking.listAdminBookings', error, 'Failed to retrieve bookings.');
   }
 };
 
@@ -145,9 +143,6 @@ export const getAdminBookingById = async (req: Request, res: Response): Promise<
 
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: error?.message || 'Failed to retrieve booking details.',
-    });
+    sendInternalError(res, 'AdminBooking.getAdminBookingById', error, 'Failed to retrieve booking details.');
   }
 };

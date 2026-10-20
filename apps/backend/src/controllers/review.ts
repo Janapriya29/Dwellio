@@ -17,6 +17,7 @@ import {
   recalculateProviderRating,
 } from '../utils/review';
 import { sendInAppNotification } from '../utils/notification';
+import { sendInternalError } from '../utils/security';
 
 /**
  * Customer: Submit a verified review for a completed booking
@@ -169,11 +170,7 @@ export const createBookingReview = async (req: Request, res: Response): Promise<
     };
     res.status(201).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to submit booking review.',
-      error: error.message,
-    });
+    sendInternalError(res, 'Review.createBookingReview', error, 'Failed to submit booking review.');
   }
 };
 
@@ -235,11 +232,7 @@ export const getBookingReview = async (req: Request, res: Response): Promise<voi
     };
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve booking review.',
-      error: error.message,
-    });
+    sendInternalError(res, 'Review.getBookingReview', error, 'Failed to retrieve booking review.');
   }
 };
 
@@ -320,11 +313,7 @@ export const getProviderReviews = async (req: Request, res: Response): Promise<v
     };
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve provider reviews.',
-      error: error.message,
-    });
+    sendInternalError(res, 'Review.getPublicProviderReviews', error, 'Failed to retrieve provider reviews.');
   }
 };
 
@@ -439,10 +428,6 @@ export const replyToReview = async (req: Request, res: Response): Promise<void> 
     };
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to post provider reply.',
-      error: error.message,
-    });
+    sendInternalError(res, 'Review.replyToReview', error, 'Failed to post provider reply.');
   }
 };

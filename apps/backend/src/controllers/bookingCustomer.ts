@@ -7,6 +7,7 @@ import { ProviderProfile } from '../models/ProviderProfile';
 import { User } from '../models/User';
 import { formatBookingDto, findConflictingProviderBooking, releaseProviderSlots } from '../utils/booking';
 import { sendInAppNotification } from '../utils/notification';
+import { sendInternalError } from '../utils/security';
 
 const MIN_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
@@ -223,11 +224,7 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
     };
     res.status(201).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create booking request.',
-      error: error.message,
-    });
+    sendInternalError(res, 'BookingCustomer.createBooking', error, 'Failed to create booking request.');
   }
 };
 
@@ -265,11 +262,7 @@ export const getCustomerBookings = async (req: Request, res: Response): Promise<
     };
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve bookings.',
-      error: error.message,
-    });
+    sendInternalError(res, 'BookingCustomer.getCustomerBookings', error, 'Failed to retrieve bookings.');
   }
 };
 
@@ -317,11 +310,7 @@ export const getCustomerBookingById = async (req: Request, res: Response): Promi
     };
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to retrieve booking details.',
-      error: error.message,
-    });
+    sendInternalError(res, 'BookingCustomer.getCustomerBookingById', error, 'Failed to retrieve booking details.');
   }
 };
 
@@ -445,10 +434,6 @@ export const cancelCustomerBooking = async (req: Request, res: Response): Promis
     };
     res.status(200).json(response);
   } catch (error: any) {
-    res.status(500).json({
-      success: false,
-      message: 'Failed to cancel booking.',
-      error: error.message,
-    });
+    sendInternalError(res, 'BookingCustomer.cancelCustomerBooking', error, 'Failed to cancel booking.');
   }
 };
