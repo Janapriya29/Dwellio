@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import mongoose from 'mongoose';
 import { createApp } from '../src/app';
@@ -872,6 +872,196 @@ describe('Phase 6: Booking Lifecycle & Service Scheduling Tests', () => {
         .send({ status: 'on_the_way' });
 
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe('5. Concurrency-Safe Slot Reservation Cleanup (Phase 10B / SEC-06)', () => {
+    it('should release acquired slot reservations if booking transition fails before committing (e.g. DB update error)', async () => {
+      const day = new Date(Date.now() + 120 * 60 * 60 * 1000);
+      const start = new Date(day.setHours(10, 0, 0, 0));
+      const end = new Date(day.setHours(12, 0, 0, 0));
+
+      const testBooking = await new Booking({
+        customerId: customerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start,
+        scheduledEndTime: end,
+        address: { street: '123 Test St', city: 'Metro City' },
+        status: 'requested',
+      }).save();
+
+      // Mock Booking.findOneAndUpdate to simulate an unhandled DB exception during state transition
+      const findOneAndUpdateSpy = vi.spyOn(Booking, 'findOneAndUpdate').mockRejectedValueOnce(new Error('Simulated DB Transition Failure'));
+
+      const res = await request(app)
+        .patch(`/api/provider/bookings/${testBooking._id}/accept`)
+        .set('Authorization', `Bearer ${providerToken}`);
+
+      findOneAndUpdateSpy.mockRestore();
+
+      expect(res.status).toBe(500);
+
+      // Verify that slot reservations were cleaned up and no orphaned records remain
+      const orphanedSlots = await SlotReservation.find({ bookingId: testBooking._id });
+      expect(orphanedSlots).toHaveLength(0);
+
+      // Verify booking remains in requested state
+      const refreshed = await Booking.findById(testBooking._id);
+      expect(refreshed?.status).toBe('requested');
+    });
+
+    it('should keep slot reservations intact if booking transition committed successfully even if a subsequent operation fails', async () => {
+      const day = new Date(Date.now() + 144 * 60 * 60 * 1000);
+      const start = new Date(day.setHours(13, 0, 0, 0));
+      const end = new Date(day.setHours(15, 0, 0, 0));
+
+      const testBooking = await new Booking({
+        customerId: customerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start,
+        scheduledEndTime: end,
+        address: { street: '456 Reliable Way', city: 'Metro City' },
+        status: 'requested',
+      }).save();
+
+      // Mock Booking.prototype.populate to simulate an unexpected error after the transition committed
+      const populateSpy = vi.spyOn(Booking.prototype, 'populate').mockRejectedValueOnce(new Error('Simulated Post-Commit Populate Glitch'));
+
+      const res = await request(app)
+        .patch(`/api/provider/bookings/${testBooking._id}/accept`)
+        .set('Authorization', `Bearer ${providerToken}`);
+
+      populateSpy.mockRestore();
+
+      expect(res.status).toBe(500);
+
+      // Since the state transition committed, the booking is accepted
+      const refreshed = await Booking.findById(testBooking._id);
+      expect(refreshed?.status).toBe('accepted');
+
+      // And the slot reservations MUST remain intact in MongoDB
+      const activeSlots = await SlotReservation.find({ bookingId: testBooking._id });
+      expect(activeSlots.length).toBeGreaterThan(0);
+    });
+
+    it('should release acquired slot reservations if another request modifies booking state before commit (concurrent change)', async () => {
+      const day = new Date(Date.now() + 168 * 60 * 60 * 1000);
+      const start = new Date(day.setHours(9, 0, 0, 0));
+      const end = new Date(day.setHours(11, 0, 0, 0));
+
+      const testBooking = await new Booking({
+        customerId: customerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start,
+        scheduledEndTime: end,
+        address: { street: '789 Concurrency Ave', city: 'Metro City' },
+        status: 'requested',
+      }).save();
+
+      // Intercept right when findOneAndUpdate is called to simulate a concurrent customer cancellation
+      const originalFindOneAndUpdate = Booking.findOneAndUpdate.bind(Booking);
+      const findOneAndUpdateSpy = vi.spyOn(Booking, 'findOneAndUpdate').mockImplementation(async function (...args: any[]) {
+        // Concurrently mutate the status in MongoDB so findOneAndUpdate finds no matching 'requested' booking
+        await Booking.updateOne({ _id: testBooking._id }, { $set: { status: 'cancelled' } });
+        return (originalFindOneAndUpdate as any)(...args);
+      });
+
+      const res = await request(app)
+        .patch(`/api/provider/bookings/${testBooking._id}/accept`)
+        .set('Authorization', `Bearer ${providerToken}`);
+
+      findOneAndUpdateSpy.mockRestore();
+
+      // Must return 409 Conflict
+      expect(res.status).toBe(409);
+      expect(res.body.message).toContain('concurrently modified');
+
+      // Verify that slot reservations were released
+      const slotsAfter = await SlotReservation.find({ bookingId: testBooking._id });
+      expect(slotsAfter).toHaveLength(0);
+
+      // Verify booking remains cancelled
+      const refreshed = await Booking.findById(testBooking._id);
+      expect(refreshed?.status).toBe('cancelled');
+    });
+
+    it('should not allow cleanup failures to obscure the original 409 conflict when booking was concurrently modified', async () => {
+      const day = new Date(Date.now() + 192 * 60 * 60 * 1000);
+      const start = new Date(day.setHours(14, 0, 0, 0));
+      const end = new Date(day.setHours(16, 0, 0, 0));
+
+      const testBooking = await new Booking({
+        customerId: customerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start,
+        scheduledEndTime: end,
+        address: { street: '101 Safe Error Lane', city: 'Metro City' },
+        status: 'requested',
+      }).save();
+
+      // 1. Concurrent modification causes findOneAndUpdate to return null
+      const findOneAndUpdateSpy = vi.spyOn(Booking, 'findOneAndUpdate').mockResolvedValueOnce(null as any);
+
+      // 2. Cleanup also fails (e.g. MongoDB delete glitch)
+      const deleteManySpy = vi.spyOn(SlotReservation, 'deleteMany').mockRejectedValueOnce(new Error('Simulated Cleanup Deletion Glitch'));
+
+      const res = await request(app)
+        .patch(`/api/provider/bookings/${testBooking._id}/accept`)
+        .set('Authorization', `Bearer ${providerToken}`);
+
+      findOneAndUpdateSpy.mockRestore();
+      deleteManySpy.mockRestore();
+
+      // Response must STILL be 409 conflict, NOT obscured by 500 or crashing
+      expect(res.status).toBe(409);
+      expect(res.body.message).toContain('concurrently modified');
+    });
+
+    it('should not allow cleanup failures to obscure the original pre-commit error during acceptance failure', async () => {
+      const day = new Date(Date.now() + 216 * 60 * 60 * 1000);
+      const start = new Date(day.setHours(11, 0, 0, 0));
+      const end = new Date(day.setHours(13, 0, 0, 0));
+
+      const testBooking = await new Booking({
+        customerId: customerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start,
+        scheduledEndTime: end,
+        address: { street: '202 Precommit Error Way', city: 'Metro City' },
+        status: 'requested',
+      }).save();
+
+      // 1. Transition update throws original error
+      const findOneAndUpdateSpy = vi.spyOn(Booking, 'findOneAndUpdate').mockRejectedValueOnce(new Error('Original Database Write Failure'));
+
+      // 2. Cleanup also throws an error
+      const deleteManySpy = vi.spyOn(SlotReservation, 'deleteMany').mockRejectedValueOnce(new Error('Secondary Cleanup Deletion Glitch'));
+
+      const res = await request(app)
+        .patch(`/api/provider/bookings/${testBooking._id}/accept`)
+        .set('Authorization', `Bearer ${providerToken}`);
+
+      findOneAndUpdateSpy.mockRestore();
+      deleteManySpy.mockRestore();
+
+      // Response must be 500 without crashing
+      expect(res.status).toBe(500);
+      expect(res.body.success).toBe(false);
     });
   });
 });

@@ -117,7 +117,10 @@ export const getProviderBookingById = async (req: Request, res: Response): Promi
  * PATCH /api/provider/bookings/:id/accept
  */
 export const acceptBooking = async (req: Request, res: Response): Promise<void> => {
-  let bookingIdToRelease: string | undefined;
+  let slotsAcquired = false;
+  let transitionCommitted = false;
+  let bookingId: string | undefined;
+
   try {
     if (!req.user || !req.providerProfile) {
       res.status(403).json({ success: false, message: 'Approved provider credentials required.' });
@@ -135,6 +138,8 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
       res.status(404).json({ success: false, message: 'Booking not found.' });
       return;
     }
+
+    bookingId = booking._id.toString();
 
     // Provider ownership verification
     if (booking.providerId.toString() !== req.providerProfile._id.toString()) {
@@ -185,10 +190,11 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Mark slot reservations as pending commit for this booking
-    bookingIdToRelease = booking._id.toString();
+    // Mark slot reservations as acquired for this attempt
+    slotsAcquired = true;
 
     // 3. Atomic state transition from 'requested' -> 'accepted'
+    // Separate the atomic update from population so the database commit boundary is exact
     const updated = await Booking.findOneAndUpdate(
       {
         _id: booking._id,
@@ -209,16 +215,19 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
         },
       },
       { returnDocument: 'after' }
-    )
-      .populate('customerId', 'name email')
-      .populate('providerId', 'displayName phone serviceArea skills')
-      .populate('serviceId', 'name slug')
-      .populate('categoryId', 'name slug');
+    );
 
     if (!updated) {
       // Concurrently modified or cancelled: release acquired slot reservations
-      await releaseProviderSlots(booking._id);
-      bookingIdToRelease = undefined;
+      try {
+        await releaseProviderSlots(booking._id);
+      } catch (cleanupError: any) {
+        console.error(
+          `[BookingProvider.acceptBooking] Failed to release slot reservations for concurrently modified booking ${booking._id}:`,
+          cleanupError?.message || cleanupError
+        );
+      }
+      slotsAcquired = false;
       res.status(409).json({
         success: false,
         message: 'Booking was concurrently modified or already responded to.',
@@ -226,8 +235,16 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Booking successfully accepted: slots are now legitimately held
-    bookingIdToRelease = undefined;
+    // Booking state transition successfully committed to database
+    transitionCommitted = true;
+
+    // Populate relations for safe client DTO response
+    await updated.populate([
+      { path: 'customerId', select: 'name email' },
+      { path: 'providerId', select: 'displayName phone serviceArea skills' },
+      { path: 'serviceId', select: 'name slug' },
+      { path: 'categoryId', select: 'name slug' },
+    ]);
 
     // Trigger in-app notification to customer (best-effort, non-blocking)
     const providerName = (updated.providerId as any)?.displayName || req.providerProfile.displayName || 'Your service professional';
@@ -248,8 +265,15 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
     };
     res.status(200).json(response);
   } catch (error: any) {
-    if (bookingIdToRelease) {
-      await releaseProviderSlots(bookingIdToRelease).catch(() => {});
+    if (slotsAcquired && !transitionCommitted && bookingId) {
+      try {
+        await releaseProviderSlots(bookingId);
+      } catch (cleanupError: any) {
+        console.error(
+          `[BookingProvider.acceptBooking] Failed to clean up slot reservations after error for booking ${bookingId}:`,
+          cleanupError?.message || cleanupError
+        );
+      }
     }
     sendInternalError(res, 'BookingProvider.acceptBooking', error, 'Failed to accept booking.');
   }
