@@ -1,68 +1,87 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { SafeUser, ApiResponse, AuthResponseData } from '@dwellio/shared';
-import { API_BASE_URL } from '../config/api';
+import React, { createContext, useContext, useState, useCallback } from 'react';
+import { SafeUser } from '@dwellio/shared';
+import { loginUser, registerCustomer } from '../services/authService';
+
+export interface DemoCredentialItem {
+  name: string;
+  email: string;
+  password: string;
+  role: 'customer' | 'provider' | 'admin';
+}
 
 interface AuthContextType {
   user: SafeUser | null;
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<SafeUser>;
+  register: (name: string, email: string, password: string) => Promise<SafeUser>;
   logout: () => void;
   switchDemoRole: (role: 'customer' | 'karthik' | 'naveen' | 'admin') => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const DEMO_CREDENTIALS = import.meta.env.DEV
+export const DEMO_CREDENTIALS: Record<string, DemoCredentialItem> | undefined = import.meta.env.DEV
   ? {
       customer: {
         name: 'Pooja Sharma (Customer)',
         email: 'customer@example.com',
         password: 'DemoCustomer2026!',
-        role: 'customer' as const,
+        role: 'customer',
       },
       karthik: {
         name: 'Karthik Raja (Roofing Provider)',
         email: 'karthik.roofing@example.com',
         password: 'DemoProvider2026!',
-        role: 'provider' as const,
+        role: 'provider',
       },
       naveen: {
         name: 'Naveen Kumar (Electrical Provider)',
         email: 'naveen.electrical@example.com',
         password: 'DemoProvider2026!',
-        role: 'provider' as const,
+        role: 'provider',
       },
       admin: {
         name: 'Dwellio Administrator',
         email: 'admin@dwellio.local',
         password: 'DwellioAdmin2026!',
-        role: 'admin' as const,
+        role: 'admin',
       },
     }
   : undefined;
 
-const DEFAULT_CUSTOMER_USER: SafeUser | null = import.meta.env.DEV
-  ? {
-      id: 'demo-customer-id',
-      name: 'Pooja Sharma',
-      email: 'customer@example.com',
-      role: 'customer',
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-  : null;
+const DEFAULT_CUSTOMER_USER: SafeUser = {
+  id: 'demo-customer-id',
+  name: 'Pooja Sharma',
+  email: 'customer@example.com',
+  role: 'customer',
+  isActive: true,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const isTestEnv = import.meta.env.MODE === 'test';
+
   const [user, setUser] = useState<SafeUser | null>(() => {
-    const saved = localStorage.getItem('dwellio_user');
-    return saved ? JSON.parse(saved) : DEFAULT_CUSTOMER_USER;
+    try {
+      const saved = localStorage.getItem('dwellio_user');
+      if (saved) return JSON.parse(saved);
+      if (isTestEnv) return DEFAULT_CUSTOMER_USER;
+      return null;
+    } catch {
+      return isTestEnv ? DEFAULT_CUSTOMER_USER : null;
+    }
   });
+
   const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem('dwellio_token') || (import.meta.env.DEV ? 'demo-customer-token' : null);
+    const saved = localStorage.getItem('dwellio_token');
+    if (saved) return saved;
+    if (isTestEnv) return 'demo-customer-token';
+    return null;
   });
+
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const saveAuth = (newUser: SafeUser, newToken: string) => {
@@ -79,65 +98,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('dwellio_token');
   };
 
-  const login = async (email: string, password: string): Promise<void> => {
+  const login = async (email: string, password: string): Promise<SafeUser> => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const json: ApiResponse<AuthResponseData> = await res.json();
-      if (!res.ok || !json.success || !json.data) {
-        throw new Error(json.message || 'Login failed');
-      }
-
-      saveAuth(json.data.user, json.data.token);
+      const authData = await loginUser({ email, password });
+      saveAuth(authData.user, authData.token);
+      return authData.user;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const switchDemoRole = useCallback(async (roleKey: 'customer' | 'karthik' | 'naveen' | 'admin'): Promise<void> => {
-    if (!import.meta.env.DEV || !DEMO_CREDENTIALS) {
-      console.warn('Demo persona switching is disabled in production.');
-      return;
-    }
-    const creds = DEMO_CREDENTIALS[roleKey];
-    if (!creds) return;
+  const register = async (name: string, email: string, password: string): Promise<SafeUser> => {
+    setIsLoading(true);
     try {
-      await login(creds.email, creds.password);
-    } catch {
-      // Fallback local mock user if backend is offline during isolated UI tests
-      const fallbackUser: SafeUser = {
-        id: `mock-${roleKey}-id`,
-        name: creds.name,
-        email: creds.email,
-        role: creds.role,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      saveAuth(fallbackUser, `mock-token-${roleKey}`);
+      const authData = await registerCustomer({ name, email, password });
+      saveAuth(authData.user, authData.token);
+      return authData.user;
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
+  };
 
-  // Initialize with demo customer in development mode if no session exists
-  useEffect(() => {
-    if (import.meta.env.DEV && !token) {
-      switchDemoRole('customer').catch(() => {});
-    }
-  }, [token, switchDemoRole]);
+  const switchDemoRole = useCallback(
+    async (roleKey: 'customer' | 'karthik' | 'naveen' | 'admin'): Promise<void> => {
+      if (!import.meta.env.DEV || !DEMO_CREDENTIALS) {
+        console.warn('Demo persona switching is disabled in production.');
+        return;
+      }
+      const creds = DEMO_CREDENTIALS[roleKey];
+      if (!creds) return;
+      try {
+        await login(creds.email, creds.password);
+      } catch {
+        // Fallback local mock user if backend is offline during isolated UI tests
+        const fallbackUser: SafeUser = {
+          id: `mock-${roleKey}-id`,
+          name: creds.name,
+          email: creds.email,
+          role: creds.role,
+          isActive: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        saveAuth(fallbackUser, `mock-token-${roleKey}`);
+      }
+    },
+    []
+  );
 
   return (
     <AuthContext.Provider
       value={{
         user,
         token,
-        isAuthenticated: !!token,
+        isAuthenticated: !!token && !!user,
         isLoading,
         login,
+        register,
         logout: clearAuth,
         switchDemoRole,
       }}

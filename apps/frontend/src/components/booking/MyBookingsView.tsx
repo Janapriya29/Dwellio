@@ -7,6 +7,7 @@ import { ReviewModal } from './ReviewModal';
 
 interface MyBookingsViewProps {
   onExploreServices: () => void;
+  onOpenLogin?: () => void;
 }
 
 const STATUS_FILTERS: { label: string; value?: BookingStatus }[] = [
@@ -39,7 +40,7 @@ const getStatusBadge = (status: BookingStatus) => {
   }
 };
 
-export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreServices }) => {
+export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreServices, onOpenLogin }) => {
   const { token, user } = useAuth();
   const [bookings, setBookings] = useState<BookingData[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<BookingStatus | undefined>(undefined);
@@ -53,7 +54,10 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
   const [reviewsByBookingId, setReviewsByBookingId] = useState<Record<string, ReviewData>>({});
 
   const loadBookings = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setErrorMessage(null);
     try {
@@ -108,6 +112,41 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
     const timeStr = `${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     return `${dateStr} • ${timeStr}`;
   };
+
+  if (!token && !isLoading) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
+        <div className="w-16 h-16 mx-auto rounded-3xl bg-dwellio-teal text-dwellio-mint flex items-center justify-center text-3xl mb-5 shadow-xs">
+          📋
+        </div>
+        <h2 className="text-3xl font-black text-dwellio-teal mb-3 tracking-tight">
+          Sign In to View Your Bookings
+        </h2>
+        <p className="text-sm text-dwellio-teal/70 leading-relaxed max-w-md mx-auto mb-8">
+          Review upcoming service appointments, check arrival status, and leave verified reviews for completed jobs.
+        </p>
+
+        <div className="flex flex-col sm:flex-row gap-3 justify-center max-w-sm mx-auto">
+          {onOpenLogin && (
+            <button
+              type="button"
+              onClick={onOpenLogin}
+              className="w-full py-3 px-5 rounded-xl bg-dwellio-teal text-white font-bold text-sm hover:opacity-95 shadow transition"
+            >
+              Sign In to Account
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onExploreServices}
+            className="w-full py-3 px-5 rounded-xl bg-white text-dwellio-teal font-bold text-sm border border-dwellio-mint hover:bg-dwellio-ivory shadow transition"
+          >
+            Explore Services
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">

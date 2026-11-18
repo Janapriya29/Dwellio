@@ -12,8 +12,22 @@ const ROOM_PILLS: { room: HouseRoom; label: string }[] = [
   { room: 'garden', label: 'Garden & Outside' },
 ];
 
-export const ServiceDiscoveryPage: React.FC = () => {
-  const [selectedRoom, setSelectedRoom] = useState<HouseRoom>('living');
+interface ServiceDiscoveryPageProps {
+  initialRoom?: HouseRoom;
+  onRequireAuth?: () => void;
+}
+
+export const ServiceDiscoveryPage: React.FC<ServiceDiscoveryPageProps> = ({
+  initialRoom = 'living',
+  onRequireAuth,
+}) => {
+  const [selectedRoom, setSelectedRoom] = useState<HouseRoom>(initialRoom);
+
+  useEffect(() => {
+    if (initialRoom) {
+      setSelectedRoom(initialRoom);
+    }
+  }, [initialRoom]);
   const [categories, setCategories] = useState<CategoryData[]>([]);
   const [services, setServices] = useState<ServiceData[]>([]);
   const [providers, setProviders] = useState<PublicProviderData[]>([]);
@@ -111,6 +125,7 @@ export const ServiceDiscoveryPage: React.FC = () => {
             isLoading={isLoading}
             error={error}
             onRetry={() => loadRoomData(selectedRoom)}
+            onRequireAuth={onRequireAuth}
           />
         </div>
       </div>

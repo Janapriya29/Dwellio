@@ -26,22 +26,23 @@ test.describe('Dwellio End-to-End Smoke Tests (SEC-12)', () => {
     await expect(footer).toBeVisible();
   });
 
-  // 2. Public Service Discovery Page
+  // 2. Public Landing Page & Service Discovery
   test('2. Public service discovery page renders interactive cutaway and categories', async ({ page }) => {
     await page.goto('/');
 
-    // Explore cutaway tab is active by default
-    const exploreTab = page.getByRole('button', { name: /Explore Cutaway/i });
-    await expect(exploreTab).toBeVisible();
+    // Verify Public Landing Page Hero or Explore Action
+    const exploreBtn = page.getByRole('button', { name: /Explore Cutaway|Explore Services/i }).first();
+    await expect(exploreBtn).toBeVisible();
+    await exploreBtn.click();
 
     // Check for interactive room cutaway or room filter buttons
     const cutawayContainer = page.getByTestId('house-cutaway');
-    const heroTitle = page.getByRole('heading', { name: /Explore Your Home/i });
+    const heroTitle = page.getByRole('heading', { name: /Pick a room|Explore Your Home/i });
 
     // Ensure either cutaway container or discovery hero is loaded
     await expect(heroTitle.or(cutawayContainer)).toBeVisible();
 
-    // Verify room buttons are accessible (Living, Kitchen, Bedroom, etc.)
+    // Verify room buttons are accessible (Living, Kitchen, Bathroom, etc.)
     const livingRoomBtn = page.getByRole('button', { name: /Living/i }).first();
     await expect(livingRoomBtn).toBeVisible();
   });

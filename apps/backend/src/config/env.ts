@@ -27,6 +27,14 @@ const getEnvNumber = (key: string, defaultValue: number): number => {
 // Safe fallback for dev/testing only
 const DEV_JWT_SECRET = 'dwellio_development_jwt_secret_key_minimum_32_bytes_long';
 
+// Known insecure or placeholder secrets that must never be permitted in production
+const INSECURE_JWT_SECRETS = [
+  DEV_JWT_SECRET,
+  'dwellio_production_secure_secret_key_minimum_32_chars_long',
+  'replace_with_a_secure_production_secret_at_least_32_characters_long',
+  'your_super_secret_jwt_key_at_least_32_characters_long',
+];
+
 export const config: AppConfig = {
   port: getEnvNumber('PORT', 5000),
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -43,7 +51,7 @@ export const validateConfig = (): void => {
   }
 
   if (config.nodeEnv === 'production') {
-    if (!config.jwtSecret || config.jwtSecret === DEV_JWT_SECRET) {
+    if (!config.jwtSecret || INSECURE_JWT_SECRETS.includes(config.jwtSecret)) {
       throw new Error(`[Config Error] JWT_SECRET must be explicitly set to a unique, secure secret in production.`);
     }
     if (config.jwtSecret.length < 32) {

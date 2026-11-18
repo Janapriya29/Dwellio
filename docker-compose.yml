@@ -40,7 +40,7 @@ services:
       - NODE_ENV=production
       - CLIENT_URL=${CLIENT_URL:-http://localhost}
       - MONGO_URI=mongodb://mongodb:27017/dwellio
-      - JWT_SECRET=${JWT_SECRET:-dwellio_production_secure_secret_key_minimum_32_chars_long}
+      - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=7d
       - API_RATE_LIMIT_MAX=500
       - CATALOG_RATE_LIMIT_MAX=200

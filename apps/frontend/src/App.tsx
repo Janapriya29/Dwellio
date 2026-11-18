@@ -1,33 +1,108 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { HouseRoom } from '@dwellio/shared';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { LandingPage } from './pages/LandingPage';
 import { ServiceDiscoveryPage } from './pages/ServiceDiscoveryPage';
 import { MyBookingsView } from './components/booking/MyBookingsView';
-import { ProviderBookingsView } from './components/booking/ProviderBookingsView';
+import { ProviderPortalView } from './components/booking/ProviderPortalView';
 import { AdminDashboardLayout } from './components/admin/AdminDashboardLayout';
 import { NotificationBell } from './components/notification/NotificationBell';
+import { AuthModal, AuthModalMode } from './components/auth/AuthModal';
 
-type AppTab = 'discover' | 'my-bookings' | 'provider-portal' | 'admin-dashboard';
+export type AppTab = 'landing' | 'discover' | 'my-bookings' | 'provider-portal' | 'admin-dashboard';
+
+const parseHashToTab = (hash: string): AppTab | null => {
+  const clean = hash.replace(/^#\/?/, '').toLowerCase();
+  if (!clean || clean === 'home' || clean === 'landing') return 'landing';
+  if (clean === 'discover' || clean === 'services' || clean === 'cutaway') return 'discover';
+  if (clean === 'my-bookings' || clean === 'bookings') return 'my-bookings';
+  if (clean === 'provider-portal' || clean === 'provider') return 'provider-portal';
+  if (clean === 'admin-dashboard' || clean === 'admin') return 'admin-dashboard';
+  return null;
+};
+
+const tabToHash = (tab: AppTab): string => {
+  switch (tab) {
+    case 'landing':
+      return '#/';
+    case 'discover':
+      return '#/discover';
+    case 'my-bookings':
+      return '#/bookings';
+    case 'provider-portal':
+      return '#/provider';
+    case 'admin-dashboard':
+      return '#/admin';
+    default:
+      return '#/';
+  }
+};
 
 const MainLayout: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<AppTab>('discover');
-  const { user, switchDemoRole } = useAuth();
+  const { user, isAuthenticated, logout, switchDemoRole } = useAuth();
+
+  // Tab state initialization with hash support
+  const [activeTab, setActiveTabState] = useState<AppTab>(() => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const fromHash = parseHashToTab(window.location.hash);
+      if (fromHash) return fromHash;
+    }
+    return user ? 'discover' : 'landing';
+  });
+
+  const [selectedRoom, setSelectedRoom] = useState<HouseRoom>('living');
+
+  // Auth modal state
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<AuthModalMode>('login');
+  const [postLoginRedirect, setPostLoginRedirect] = useState<AppTab | undefined>(undefined);
+
+  const setActiveTab = (tab: AppTab) => {
+    setActiveTabState(tab);
+    if (typeof window !== 'undefined') {
+      window.location.hash = tabToHash(tab);
+    }
+  };
+
+  // Sync hash changes (e.g. browser back/forward buttons)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const tab = parseHashToTab(window.location.hash);
+      if (tab) {
+        setActiveTabState(tab);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const openAuth = (mode: AuthModalMode, redirect?: AppTab) => {
+    setAuthModalMode(mode);
+    setPostLoginRedirect(redirect);
+    setIsAuthModalOpen(true);
+  };
+
+  const handleLogout = () => {
+    logout();
+    setActiveTab('landing');
+  };
 
   return (
     <div className="min-h-screen bg-dwellio-ivory text-dwellio-teal flex flex-col justify-between">
       {/* Top Header */}
-      <header className="border-b border-dwellio-mint/30 bg-white/70 backdrop-blur-md sticky top-0 z-40">
+      <header className="border-b border-dwellio-mint/30 bg-white/80 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
           {/* Brand Logo & Tagline */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setActiveTab('discover')}
-                className="w-10 h-10 rounded-2xl bg-dwellio-teal flex items-center justify-center shadow-xs text-dwellio-mint font-bold text-xl hover:opacity-90 transition"
-                title="Dwellio Home"
-              >
+            <button
+              type="button"
+              onClick={() => setActiveTab('landing')}
+              className="flex items-center gap-3 text-left group"
+              title="Dwellio Home"
+            >
+              <span className="w-10 h-10 rounded-2xl bg-dwellio-teal flex items-center justify-center shadow-xs text-dwellio-mint font-bold text-xl group-hover:opacity-90 transition">
                 D
-              </button>
+              </span>
               <div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-2xl font-black tracking-tight text-dwellio-teal">
@@ -39,20 +114,51 @@ const MainLayout: React.FC = () => {
                   Your Home, in Good Hands.
                 </p>
               </div>
-            </div>
+            </button>
 
-            {/* Phase Badge */}
-            <span className="md:hidden inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold bg-dwellio-mint/40 text-dwellio-teal border border-dwellio-mint/80">
-              Phase 9
-            </span>
+            {/* Quick Mobile Auth / Status */}
+            <div className="md:hidden flex items-center gap-2">
+              {isAuthenticated ? (
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="px-2.5 py-1 rounded-xl text-xs font-bold text-dwellio-teal bg-dwellio-ivory border border-dwellio-mint"
+                >
+                  Sign Out
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => openAuth('login')}
+                  className="px-3 py-1 rounded-xl text-xs font-bold bg-dwellio-teal text-white shadow-xs"
+                >
+                  Sign In
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Navigation Tabs */}
-          <nav className="flex items-center gap-1.5 bg-dwellio-ivory/80 p-1 rounded-2xl border border-dwellio-mint/50">
+          {/* Navigation Links & Persona Views */}
+          <nav className="flex items-center gap-1.5 bg-dwellio-ivory/80 p-1 rounded-2xl border border-dwellio-mint/50 overflow-x-auto scrollbar-none">
+            {/* Home Link */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('landing')}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+                activeTab === 'landing'
+                  ? 'bg-dwellio-teal text-white shadow-xs'
+                  : 'text-dwellio-teal/70 hover:text-dwellio-teal'
+              }`}
+            >
+              <span>🏡</span>
+              <span>Home</span>
+            </button>
+
+            {/* Explore Cutaway / Services */}
             <button
               type="button"
               onClick={() => setActiveTab('discover')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'discover'
                   ? 'bg-dwellio-teal text-white shadow-xs'
                   : 'text-dwellio-teal/70 hover:text-dwellio-teal'
@@ -62,37 +168,56 @@ const MainLayout: React.FC = () => {
               <span>Explore Cutaway</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('my-bookings')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                activeTab === 'my-bookings'
-                  ? 'bg-dwellio-teal text-white shadow-xs'
-                  : 'text-dwellio-teal/70 hover:text-dwellio-teal'
-              }`}
-            >
-              <span>📋</span>
-              <span>My Bookings</span>
-            </button>
+            {/* Customer Bookings Tab */}
+            {(!isAuthenticated || user?.role === 'customer') && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    openAuth('login', 'my-bookings');
+                  } else {
+                    setActiveTab('my-bookings');
+                  }
+                }}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'my-bookings'
+                    ? 'bg-dwellio-teal text-white shadow-xs'
+                    : 'text-dwellio-teal/70 hover:text-dwellio-teal'
+                }`}
+              >
+                <span>📋</span>
+                <span>My Bookings</span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('provider-portal')}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                activeTab === 'provider-portal'
-                  ? 'bg-dwellio-teal text-white shadow-xs'
-                  : 'text-dwellio-teal/70 hover:text-dwellio-teal'
-              }`}
-            >
-              <span>🔧</span>
-              <span>Provider Portal</span>
-            </button>
+            {/* Provider Portal Tab */}
+            {(!isAuthenticated || user?.role === 'provider' || user?.role === 'customer') && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    openAuth('login', 'provider-portal');
+                  } else {
+                    setActiveTab('provider-portal');
+                  }
+                }}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'provider-portal'
+                    ? 'bg-dwellio-teal text-white shadow-xs'
+                    : 'text-dwellio-teal/70 hover:text-dwellio-teal'
+                }`}
+              >
+                <span>🔧</span>
+                <span>Provider Portal</span>
+              </button>
+            )}
 
+            {/* Admin Dashboard Tab (strictly visible for admin role) */}
             {user?.role === 'admin' && (
               <button
                 type="button"
                 onClick={() => setActiveTab('admin-dashboard')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
                   activeTab === 'admin-dashboard'
                     ? 'bg-dwellio-teal text-white shadow-xs'
                     : 'text-dwellio-teal/70 hover:text-dwellio-teal'
@@ -104,24 +229,70 @@ const MainLayout: React.FC = () => {
             )}
           </nav>
 
-          {/* Active Persona, Notifications & Role Switcher */}
-          <div className="flex items-center gap-2">
-            <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
+          {/* Right Header Area: Authenticated Profile OR Public Auth CTAs */}
+          <div className="flex items-center gap-2 self-end md:self-auto">
+            {isAuthenticated ? (
+              <>
+                <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
 
-            <div className="hidden lg:flex flex-col text-right text-[11px]">
-              <span className="font-bold text-dwellio-teal">{user?.name || 'Customer'}</span>
-              <span className="text-dwellio-teal/60 capitalize">{user?.role || 'Guest'}</span>
-            </div>
+                <div className="hidden lg:flex flex-col text-right text-[11px] leading-tight">
+                  <span className="font-bold text-dwellio-teal">{user?.name}</span>
+                  <span className="text-dwellio-teal/60 capitalize font-medium">
+                    {user?.role === 'admin'
+                      ? 'Administrator'
+                      : user?.role === 'provider'
+                      ? 'Service Provider'
+                      : 'Customer'}
+                  </span>
+                </div>
 
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-dwellio-teal hover:bg-dwellio-mint/30 border border-dwellio-mint/80 transition"
+                  title="Sign out of current account"
+                >
+                  Sign Out
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => openAuth('apply-provider')}
+                  className="hidden sm:inline-flex px-3 py-1.5 rounded-xl text-xs font-bold text-[#D9653B] bg-white border border-[#D9653B]/40 hover:bg-[#D9653B]/10 transition"
+                >
+                  Become a Provider
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => openAuth('login')}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white text-dwellio-teal border border-dwellio-mint/80 hover:bg-dwellio-ivory transition shadow-xs"
+                >
+                  Sign In
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => openAuth('register-customer')}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-dwellio-teal text-white hover:opacity-90 transition shadow-xs"
+                >
+                  Sign Up
+                </button>
+              </div>
+            )}
+
+            {/* Development Quick Persona Switcher */}
             {import.meta.env.DEV && (
-              <div className="flex items-center gap-1">
+              <div className="hidden xl:flex items-center gap-1 pl-2 border-l border-dwellio-mint/40">
                 <button
                   type="button"
                   onClick={() => {
                     switchDemoRole('customer');
                     setActiveTab('my-bookings');
                   }}
-                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white border border-dwellio-mint/80 hover:bg-dwellio-mint/20 text-dwellio-teal transition"
+                  className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white border border-dwellio-mint hover:bg-dwellio-mint/20 text-dwellio-teal transition"
                   title="Switch to Customer session (Pooja Sharma)"
                 >
                   Customer
@@ -132,7 +303,7 @@ const MainLayout: React.FC = () => {
                     switchDemoRole('karthik');
                     setActiveTab('provider-portal');
                   }}
-                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white border border-dwellio-mint/80 hover:bg-dwellio-mint/20 text-dwellio-teal transition"
+                  className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white border border-dwellio-mint hover:bg-dwellio-mint/20 text-dwellio-teal transition"
                   title="Switch to Provider session (Karthik Raja)"
                 >
                   Provider
@@ -143,7 +314,7 @@ const MainLayout: React.FC = () => {
                     switchDemoRole('admin');
                     setActiveTab('admin-dashboard');
                   }}
-                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white border border-dwellio-mint/80 hover:bg-dwellio-mint/20 text-dwellio-teal transition"
+                  className="px-2 py-1 rounded-lg text-[10px] font-bold bg-amber-50 border border-amber-300 hover:bg-amber-100 text-amber-900 transition"
                   title="Switch to Admin session (Dwellio Administrator)"
                 >
                   Admin
@@ -156,22 +327,205 @@ const MainLayout: React.FC = () => {
 
       {/* Main View Area */}
       <main className="flex-1">
-        {activeTab === 'discover' && <ServiceDiscoveryPage />}
-        {activeTab === 'my-bookings' && (
-          <MyBookingsView onExploreServices={() => setActiveTab('discover')} />
+        {activeTab === 'landing' && (
+          <LandingPage
+            onExploreServices={(room) => {
+              if (room) setSelectedRoom(room);
+              setActiveTab('discover');
+            }}
+            onOpenLogin={() => openAuth('login')}
+            onOpenCustomerSignUp={() => openAuth('register-customer')}
+            onOpenProviderApply={() => openAuth('apply-provider')}
+          />
         )}
-        {activeTab === 'provider-portal' && <ProviderBookingsView />}
+
+        {activeTab === 'discover' && (
+          <ServiceDiscoveryPage
+            initialRoom={selectedRoom}
+            onRequireAuth={() => openAuth('login', 'discover')}
+          />
+        )}
+
+        {activeTab === 'my-bookings' && (
+          <MyBookingsView
+            onExploreServices={() => setActiveTab('discover')}
+            onOpenLogin={() => openAuth('login', 'my-bookings')}
+          />
+        )}
+
+        {activeTab === 'provider-portal' && (
+          <ProviderPortalView
+            onOpenLogin={() => openAuth('login', 'provider-portal')}
+            onOpenApply={() => openAuth('apply-provider')}
+          />
+        )}
+
         {activeTab === 'admin-dashboard' && <AdminDashboardLayout />}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-dwellio-mint/30 bg-white/40 py-6 text-center text-xs text-dwellio-teal/60 mt-12">
-        <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p>&copy; {new Date().getFullYear()} Dwellio. Your Home, in Good Hands.</p>
-          <p className="flex items-center gap-1.5 text-dwellio-teal/70">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            Phase 9: In-App Notifications &amp; Communication
-          </p>
+      {/* Authentication Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        initialMode={authModalMode}
+        postLoginRedirect={postLoginRedirect}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={(loggedInUser, destination) => {
+          if (destination) {
+            setActiveTab(destination);
+          } else if (loggedInUser.role === 'admin') {
+            setActiveTab('admin-dashboard');
+          } else if (loggedInUser.role === 'provider') {
+            setActiveTab('provider-portal');
+          } else {
+            setActiveTab('discover');
+          }
+        }}
+      />
+
+      {/* Comprehensive Brand Footer */}
+      <footer className="border-t border-dwellio-mint/30 bg-white/70 py-10 text-xs text-dwellio-teal/70 mt-16">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8 pb-8 border-b border-dwellio-mint/30">
+            {/* Column 1: Brand Info */}
+            <div className="space-y-3 md:col-span-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xl font-black text-dwellio-teal">Dwellio</span>
+                <span className="w-2 h-2 rounded-xs bg-[#D9653B]" aria-hidden="true" />
+              </div>
+              <p className="text-xs text-dwellio-teal/70 leading-relaxed">
+                Your Home, in Good Hands.
+              </p>
+              <p className="text-[11px] text-dwellio-teal/60 leading-relaxed">
+                The full-stack home services platform with verified trade professionals, guaranteed time slots, and verified customer reviews.
+              </p>
+            </div>
+
+            {/* Column 2: Homeowners */}
+            <div>
+              <h3 className="font-bold text-xs uppercase tracking-wider text-dwellio-teal mb-3">
+                For Homeowners
+              </h3>
+              <ul className="space-y-2 text-xs">
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('discover')}
+                    className="hover:text-[#D9653B] transition"
+                  >
+                    Explore Services &amp; Cutaway
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isAuthenticated) openAuth('login', 'my-bookings');
+                      else setActiveTab('my-bookings');
+                    }}
+                    className="hover:text-[#D9653B] transition"
+                  >
+                    My Bookings &amp; Appointments
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => openAuth('register-customer')}
+                    className="hover:text-[#D9653B] transition"
+                  >
+                    Customer Registration
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            {/* Column 3: Providers */}
+            <div>
+              <h3 className="font-bold text-xs uppercase tracking-wider text-dwellio-teal mb-3">
+                For Service Providers
+              </h3>
+              <ul className="space-y-2 text-xs">
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => openAuth('apply-provider')}
+                    className="hover:text-[#D9653B] transition font-medium"
+                  >
+                    Apply to Join Network
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isAuthenticated) openAuth('login', 'provider-portal');
+                      else setActiveTab('provider-portal');
+                    }}
+                    className="hover:text-[#D9653B] transition"
+                  >
+                    Provider Portal Login
+                  </button>
+                </li>
+                <li>
+                  <span className="text-[11px] text-dwellio-teal/50">
+                    4-Point Verification Required
+                  </span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Column 4: Platform & Governance */}
+            <div>
+              <h3 className="font-bold text-xs uppercase tracking-wider text-dwellio-teal mb-3">
+                Administration
+              </h3>
+              <ul className="space-y-2 text-xs">
+                {user?.role === 'admin' ? (
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('admin-dashboard')}
+                      className="hover:text-[#D9653B] transition font-bold text-dwellio-teal"
+                    >
+                      🛡️ Open Admin Dashboard
+                    </button>
+                  </li>
+                ) : (
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => openAuth('login', 'admin-dashboard')}
+                      className="hover:text-[#D9653B] transition text-dwellio-teal/70"
+                      title="Sign in with your configured platform administrator account"
+                    >
+                      Administrator Sign In
+                    </button>
+                  </li>
+                )}
+                <li className="pt-2 text-[11px] text-dwellio-teal/60">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    System Operational
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-dwellio-teal/60">
+            <p>&copy; {new Date().getFullYear()} Dwellio. Your Home, in Good Hands.</p>
+            <p className="flex items-center gap-2">
+              <span>Roofing</span>
+              <span>•</span>
+              <span>Plumbing</span>
+              <span>•</span>
+              <span>Electrical</span>
+              <span>•</span>
+              <span>Appliances</span>
+              <span>•</span>
+              <span>Outdoor Care</span>
+            </p>
+          </div>
         </div>
       </footer>
     </div>

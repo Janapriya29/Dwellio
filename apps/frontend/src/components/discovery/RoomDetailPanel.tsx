@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { HouseRoom, CategoryData, ServiceData, PublicProviderData } from '@dwellio/shared';
+import { useAuth } from '../../context/AuthContext';
 import { VerificationRing } from './VerificationRing';
 import { BookingModal } from '../booking/BookingModal';
 
@@ -11,6 +12,7 @@ interface RoomDetailPanelProps {
   isLoading: boolean;
   error: string | null;
   onRetry: () => void;
+  onRequireAuth?: () => void;
 }
 
 const ROOM_METADATA: Record<HouseRoom, { title: string; description: string; defaultSkills: string[] }> = {
@@ -49,8 +51,18 @@ export const RoomDetailPanel: React.FC<RoomDetailPanelProps> = ({
   isLoading,
   error,
   onRetry,
+  onRequireAuth,
 }) => {
+  const { token } = useAuth();
   const [selectedProviderForBooking, setSelectedProviderForBooking] = useState<PublicProviderData | null>(null);
+
+  const handleBookClick = (pro: PublicProviderData) => {
+    if (!token && onRequireAuth) {
+      onRequireAuth();
+      return;
+    }
+    setSelectedProviderForBooking(pro);
+  };
 
   const roomMeta = ROOM_METADATA[selectedRoom] || {
     title: selectedRoom,
@@ -236,7 +248,7 @@ export const RoomDetailPanel: React.FC<RoomDetailPanelProps> = ({
                 <div className="sm:self-center flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-dwellio-mint/20 flex justify-end">
                   <button
                     type="button"
-                    onClick={() => setSelectedProviderForBooking(pro)}
+                    onClick={() => handleBookClick(pro)}
                     className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 text-xs font-bold rounded-xl bg-[#D9653B] text-white hover:bg-[#c4562f] shadow-xs hover:shadow transition duration-150 focus:outline-none focus:ring-2 focus:ring-[#D9653B] focus:ring-offset-2"
                   >
                     Book

@@ -130,8 +130,15 @@ describe('BookingModal Component', () => {
       </AuthProvider>
     );
 
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + 7);
+    const targetYear = targetDate.getFullYear();
+    const targetMonth = targetDate.getMonth();
+    const targetDay = targetDate.getDate();
+    const formattedDate = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
+
     const dateInput = screen.getByLabelText(/appointment date/i);
-    fireEvent.change(dateInput, { target: { value: '2026-11-15' } });
+    fireEvent.change(dateInput, { target: { value: formattedDate } });
 
     const submitBtn = screen.getByRole('button', { name: /confirm & request booking/i });
     fireEvent.click(submitBtn);
@@ -142,8 +149,8 @@ describe('BookingModal Component', () => {
 
     // Verify local Date was converted to ISO string
     const callArgs = vi.mocked(bookingService.createBooking).mock.calls[0][0];
-    const expectedLocalStart = new Date(2026, 10, 15, 9, 0, 0, 0).toISOString();
-    const expectedLocalEnd = new Date(2026, 10, 15, 11, 0, 0, 0).toISOString();
+    const expectedLocalStart = new Date(targetYear, targetMonth, targetDay, 9, 0, 0, 0).toISOString();
+    const expectedLocalEnd = new Date(targetYear, targetMonth, targetDay, 11, 0, 0, 0).toISOString();
 
     expect(callArgs.scheduledStartTime).toBe(expectedLocalStart);
     expect(callArgs.scheduledEndTime).toBe(expectedLocalEnd);
