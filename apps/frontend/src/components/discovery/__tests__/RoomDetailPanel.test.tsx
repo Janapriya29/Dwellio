@@ -149,10 +149,11 @@ describe('RoomDetailPanel Component', () => {
     );
 
     expect(screen.getByText('Naveen Kumar')).toBeInTheDocument();
-    expect(screen.getByText(/fully verified/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/dwellio admin verified specialist/i)[0]).toBeInTheDocument();
     expect(screen.getByText('4.8')).toBeInTheDocument();
     expect(screen.getByText('(12 reviews)')).toBeInTheDocument();
     expect(screen.getByText(/serving central metro/i)).toBeInTheDocument();
+    expect(screen.queryByText(/4 of 4 checks/i)).not.toBeInTheDocument();
 
     // Click Book
     const bookButton = screen.getByRole('button', { name: 'Book' });
@@ -166,5 +167,63 @@ describe('RoomDetailPanel Component', () => {
     const cancelBtn = screen.getByRole('button', { name: 'Cancel' });
     fireEvent.click(cancelBtn);
     expect(screen.queryByRole('heading', { name: /book naveen kumar/i })).not.toBeInTheDocument();
+  });
+
+  it('renders transparent pricing notice and opens ProviderProfileModal when clicking Reviews button', () => {
+    render(
+      <AuthProvider>
+        <RoomDetailPanel
+          selectedRoom="living"
+          categories={[mockCategory]}
+          services={mockServices}
+          providers={mockProviders}
+          isLoading={false}
+          error={null}
+          onRetry={vi.fn()}
+        />
+      </AuthProvider>
+    );
+
+    // Verify pricing notice
+    expect(screen.getByText(/transparent pricing:/i)).toBeInTheDocument();
+    expect(screen.getByText(/indicative diagnostic visit from/i)).toBeInTheDocument();
+    expect(screen.getByText(/₹499/)).toBeInTheDocument();
+    expect(screen.queryByText(/credited if service is performed/i)).not.toBeInTheDocument();
+
+    // Click Reviews button
+    const reviewsBtn = screen.getByRole('button', { name: /reviews \(12\)/i });
+    expect(reviewsBtn).toBeInTheDocument();
+    fireEvent.click(reviewsBtn);
+
+    // Verify ProviderProfileModal opens
+    expect(screen.getByRole('heading', { name: 'Naveen Kumar' })).toBeInTheDocument();
+    expect(screen.getByText(/verified customer reviews/i)).toBeInTheDocument();
+  });
+
+  it('does not display admin verified badge for pending or rejected providers', () => {
+    const unverifiedProviders: PublicProviderData[] = [
+      {
+        ...mockProviders[0],
+        id: 'pro-unverified',
+        verificationStatus: 'pending',
+      },
+    ];
+
+    render(
+      <AuthProvider>
+        <RoomDetailPanel
+          selectedRoom="living"
+          categories={[mockCategory]}
+          services={mockServices}
+          providers={unverifiedProviders}
+          isLoading={false}
+          error={null}
+          onRetry={vi.fn()}
+        />
+      </AuthProvider>
+    );
+
+    expect(screen.getByText('Pending Verification')).toBeInTheDocument();
+    expect(screen.queryByText(/dwellio admin verified specialist/i)).not.toBeInTheDocument();
   });
 });

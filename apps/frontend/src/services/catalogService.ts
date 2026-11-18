@@ -39,13 +39,31 @@ export const fetchServices = async (categoryId?: string, categorySlug?: string):
   return json.data || [];
 };
 
+export interface ProviderFilterParams {
+  room?: HouseRoom;
+  serviceArea?: string;
+  skill?: string;
+}
+
 /**
- * Fetch approved service providers for a specific room or skill.
+ * Fetch approved service providers for a specific room, service area, or skill.
  */
-export const fetchApprovedProviders = async (room?: HouseRoom): Promise<PublicProviderData[]> => {
+export const fetchApprovedProviders = async (
+  filters?: HouseRoom | ProviderFilterParams
+): Promise<PublicProviderData[]> => {
   const url = createApiUrl('/catalog/providers');
-  if (room) {
-    url.searchParams.append('room', room);
+  if (typeof filters === 'string') {
+    url.searchParams.append('room', filters);
+  } else if (filters) {
+    if (filters.room) {
+      url.searchParams.append('room', filters.room);
+    }
+    if (filters.serviceArea && filters.serviceArea.trim()) {
+      url.searchParams.append('serviceArea', filters.serviceArea.trim());
+    }
+    if (filters.skill && filters.skill.trim()) {
+      url.searchParams.append('skill', filters.skill.trim());
+    }
   }
 
   const res = await fetch(url.toString());

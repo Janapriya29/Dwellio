@@ -3,6 +3,7 @@ import { HouseRoom, CategoryData, ServiceData, PublicProviderData } from '@dwell
 import { useAuth } from '../../context/AuthContext';
 import { VerificationRing } from './VerificationRing';
 import { BookingModal } from '../booking/BookingModal';
+import { ProviderProfileModal } from './ProviderProfileModal';
 
 interface RoomDetailPanelProps {
   selectedRoom: HouseRoom;
@@ -55,6 +56,7 @@ export const RoomDetailPanel: React.FC<RoomDetailPanelProps> = ({
 }) => {
   const { token } = useAuth();
   const [selectedProviderForBooking, setSelectedProviderForBooking] = useState<PublicProviderData | null>(null);
+  const [selectedProviderForProfile, setSelectedProviderForProfile] = useState<PublicProviderData | null>(null);
 
   const handleBookClick = (pro: PublicProviderData) => {
     if (!token && onRequireAuth) {
@@ -118,6 +120,17 @@ export const RoomDetailPanel: React.FC<RoomDetailPanelProps> = ({
               {categories.map((c) => c.name).join(' • ')}
             </span>
           )}
+        </div>
+
+        {/* Pricing Transparency Notice */}
+        <div className="mt-3.5 p-3 rounded-2xl bg-dwellio-ivory/70 border border-dwellio-mint/50 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-dwellio-teal/80">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">🏷️</span>
+            <span>
+              <strong>Transparent Pricing:</strong> Indicative diagnostic visit from <strong>₹499</strong>. Final quotation provided after inspection.
+            </span>
+          </div>
+          <span className="text-[11px] text-dwellio-teal/60 font-medium">Clear Quotes Upfront</span>
         </div>
       </div>
 
@@ -192,32 +205,48 @@ export const RoomDetailPanel: React.FC<RoomDetailPanelProps> = ({
               >
                 {/* Left: Verification Ring + Details */}
                 <div className="flex items-start sm:items-center gap-3.5">
-                  <VerificationRing providerName={pro.displayName} passedChecks={4} totalChecks={4} />
+                  <VerificationRing providerName={pro.displayName} status={pro.verificationStatus} />
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-base text-dwellio-teal">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedProviderForProfile(pro)}
+                        className="font-bold text-base text-dwellio-teal hover:underline text-left cursor-pointer"
+                        title="View profile and customer reviews"
+                      >
                         {pro.displayName}
-                      </span>
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                        <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        Fully Verified
-                      </span>
+                      </button>
+                      {pro.verificationStatus === 'approved' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          <svg className="w-3 h-3 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                          Dwellio Admin Verified Specialist
+                        </span>
+                      ) : pro.verificationStatus === 'pending' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                          Pending Verification
+                        </span>
+                      ) : null}
                     </div>
 
                     {/* Customer Rating / Review Summary */}
                     <div className="flex items-center gap-2 mt-0.5">
                       {pro.reviewCount && pro.reviewCount > 0 ? (
-                        <div className="inline-flex items-center gap-1.5 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedProviderForProfile(pro)}
+                          className="inline-flex items-center gap-1.5 text-xs hover:opacity-80 transition cursor-pointer"
+                          title="Read verified reviews"
+                        >
                           <span className="text-amber-500 font-bold">★</span>
                           <span className="font-bold text-dwellio-teal">
                             {Number(pro.ratingAverage).toFixed(1)}
                           </span>
-                          <span className="text-dwellio-teal/60 font-medium">
+                          <span className="text-dwellio-teal/60 font-medium underline">
                             ({pro.reviewCount} {pro.reviewCount === 1 ? 'review' : 'reviews'})
                           </span>
-                        </div>
+                        </button>
                       ) : (
                         <span className="text-[11px] text-dwellio-teal/50 italic">
                           No reviews yet
@@ -237,15 +266,26 @@ export const RoomDetailPanel: React.FC<RoomDetailPanelProps> = ({
                       )}
                     </div>
 
-                    <div className="text-[11px] text-dwellio-teal/50 mt-1 flex items-center gap-1.5">
-                      <span className="text-emerald-600 font-semibold">4 of 4 checks:</span>
-                      <span>ID, Skill, Background &amp; Admin</span>
-                    </div>
+                    {pro.verificationStatus === 'approved' && (
+                      <div className="text-[11px] text-emerald-700/80 mt-1 flex items-center gap-1 font-medium">
+                        <svg className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        <span>Verified by Dwellio administration</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Right: Book Action */}
-                <div className="sm:self-center flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-dwellio-mint/20 flex justify-end">
+                {/* Right: Actions */}
+                <div className="sm:self-center flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-dwellio-mint/20 flex items-center gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProviderForProfile(pro)}
+                    className="w-full sm:w-auto inline-flex items-center justify-center px-3 py-2 text-xs font-bold rounded-xl border border-dwellio-mint/80 text-dwellio-teal hover:bg-dwellio-ivory transition duration-150"
+                  >
+                    Reviews ({pro.reviewCount || 0})
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleBookClick(pro)}
@@ -269,6 +309,19 @@ export const RoomDetailPanel: React.FC<RoomDetailPanelProps> = ({
           Professionals shown are verified by Dwellio administration through credential validation and skills assessment.
         </p>
       </div>
+
+      {/* Provider Profile & Reviews Modal */}
+      {selectedProviderForProfile && (
+        <ProviderProfileModal
+          isOpen={true}
+          provider={selectedProviderForProfile}
+          onClose={() => setSelectedProviderForProfile(null)}
+          onBook={(pro) => {
+            setSelectedProviderForProfile(null);
+            handleBookClick(pro);
+          }}
+        />
+      )}
 
       {/* Real Interactive Booking Modal */}
       {selectedProviderForBooking && (

@@ -1,72 +1,83 @@
 import React from 'react';
+import { ProviderVerificationStatus } from '@dwellio/shared';
 
 interface VerificationRingProps {
   passedChecks?: number;
   totalChecks?: number;
+  status?: ProviderVerificationStatus;
   providerName: string;
 }
 
-const STAGES = ['Identity Verified', 'Skill Verified', 'Background Checked', 'Admin Approved'];
-
 export const VerificationRing: React.FC<VerificationRingProps> = ({
-  passedChecks = 4,
-  totalChecks = 4,
+  status = 'approved',
   providerName,
 }) => {
-  const verifiedStages = STAGES.slice(0, passedChecks).join(', ');
+  const isApproved = status === 'approved';
+  const isPending = status === 'pending';
+
+  const label = isApproved
+    ? `${providerName}: Dwellio Admin Verified Specialist`
+    : isPending
+    ? `${providerName}: Verification Pending Admin Review`
+    : `${providerName}: Unverified`;
 
   return (
-    <div className="relative flex-shrink-0" title={`${providerName}: ${passedChecks}/${totalChecks} checks (${verifiedStages})`}>
+    <div className="relative flex-shrink-0" title={label}>
       <svg
         className="w-12 h-12 transform -rotate-90 select-none"
         viewBox="0 0 52 52"
         role="img"
-        aria-label={`${providerName}: ${passedChecks} of ${totalChecks} verification checks passed`}
+        aria-label={label}
       >
-        <title>{`Verified: ${verifiedStages}`}</title>
-        {Array.from({ length: totalChecks }).map((_, i) => {
-          const offset = -i * 25;
-          const isPassed = i < passedChecks;
-          return (
-            <React.Fragment key={i}>
-              {/* Background slot */}
-              <circle
-                cx="26"
-                cy="26"
-                r="21"
-                fill="none"
-                stroke="#C9D6D1"
-                strokeWidth="4"
-                strokeLinecap="round"
-                pathLength="100"
-                strokeDasharray="21 79"
-                strokeDashoffset={offset}
-              />
-              {/* Passed fill */}
-              {isPassed && (
-                <circle
-                  cx="26"
-                  cy="26"
-                  r="21"
-                  fill="none"
-                  stroke="#2E9E6B"
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  pathLength="100"
-                  strokeDasharray="21 79"
-                  strokeDashoffset={offset}
-                  className="transition-all duration-300 ease-out"
-                />
-              )}
-            </React.Fragment>
-          );
-        })}
+        <title>{label}</title>
+        {/* Background track */}
+        <circle
+          cx="26"
+          cy="26"
+          r="21"
+          fill="none"
+          stroke="#C9D6D1"
+          strokeWidth="4"
+        />
+        {/* Active Ring */}
+        {isApproved && (
+          <circle
+            cx="26"
+            cy="26"
+            r="21"
+            fill="none"
+            stroke="#2E9E6B"
+            strokeWidth="4"
+            strokeLinecap="round"
+            pathLength="100"
+            strokeDasharray="100 0"
+            className="transition-all duration-300 ease-out"
+          />
+        )}
+        {isPending && (
+          <circle
+            cx="26"
+            cy="26"
+            r="21"
+            fill="none"
+            stroke="#D97706"
+            strokeWidth="4"
+            strokeLinecap="round"
+            pathLength="100"
+            strokeDasharray="50 50"
+            className="transition-all duration-300 ease-out"
+          />
+        )}
       </svg>
-      {/* Central check badge */}
+      {/* Central icon */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <span className="text-[10px] font-bold text-dwellio-teal">
-          {passedChecks}/{totalChecks}
-        </span>
+        {isApproved ? (
+          <span className="text-sm font-black text-emerald-700">✓</span>
+        ) : isPending ? (
+          <span className="text-xs font-bold text-amber-700">⏳</span>
+        ) : (
+          <span className="text-xs font-bold text-slate-400">—</span>
+        )}
       </div>
     </div>
   );
