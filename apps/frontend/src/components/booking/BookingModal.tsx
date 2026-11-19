@@ -1,7 +1,22 @@
-import React, { useState } from 'react';
-import { PublicProviderData, ServiceData, BookingData, HouseRoom } from '@dwellio/shared';
+import React, { useState, useEffect } from 'react';
+import type {
+  PublicProviderData,
+  ServiceData,
+  BookingData,
+  HouseRoom,
+  StandardTimeSlotDefinition,
+  ProviderSlotAvailability,
+} from '@dwellio/shared';
 import { useAuth } from '../../context/AuthContext';
 import { createBooking } from '../../services/bookingService';
+import { fetchProviderAvailability } from '../../services/catalogService';
+
+export const STANDARD_TIME_SLOTS: StandardTimeSlotDefinition[] = [
+  { slotIndex: 0, label: '09:00 AM – 11:00 AM', startHour: 9, startMin: 0, endHour: 11, endMin: 0 },
+  { slotIndex: 1, label: '11:30 AM – 01:30 PM', startHour: 11, startMin: 30, endHour: 13, endMin: 30 },
+  { slotIndex: 2, label: '02:00 PM – 04:00 PM', startHour: 14, startMin: 0, endHour: 16, endMin: 0 },
+  { slotIndex: 3, label: '04:30 PM – 06:30 PM', startHour: 16, startMin: 30, endHour: 18, endMin: 30 },
+];
 
 interface BookingModalProps {
   isOpen: boolean;
@@ -10,14 +25,27 @@ interface BookingModalProps {
   services: ServiceData[];
   selectedRoom?: HouseRoom;
   onBookingSuccess?: (booking: BookingData) => void;
+  onNavigateToBookings?: () => void;
 }
 
-const TIME_SLOTS = [
-  { label: '09:00 AM – 11:00 AM', startHour: 9, startMin: 0, endHour: 11, endMin: 0 },
-  { label: '11:30 AM – 01:30 PM', startHour: 11, startMin: 30, endHour: 13, endMin: 30 },
-  { label: '02:00 PM – 04:00 PM', startHour: 14, startMin: 0, endHour: 16, endMin: 0 },
-  { label: '04:30 PM – 06:30 PM', startHour: 16, startMin: 30, endHour: 18, endMin: 30 },
-];
+const STORAGE_KEY_ADDRESS = 'dwellio_customer_address';
+
+const getSavedAddress = (): { street: string; city: string; postalCode: string } => {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_ADDRESS) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        street: typeof parsed.street === 'string' ? parsed.street : '',
+        city: typeof parsed.city === 'string' ? parsed.city : '',
+        postalCode: typeof parsed.postalCode === 'string' ? parsed.postalCode : '',
+      };
+    }
+  } catch {
+    // ignore localStorage parse errors
+  }
+  return { street: '', city: '', postalCode: '' };
+};
 
 export const BookingModal: React.FC<BookingModalProps> = ({
   isOpen,
@@ -25,6 +53,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   provider,
   services,
   onBookingSuccess,
+  onNavigateToBookings,
 }) => {
   const { token } = useAuth();
 
@@ -40,16 +69,68 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   );
   const [selectedDate, setSelectedDate] = useState<string>(tomorrowStr);
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number>(0);
-  const [street, setStreet] = useState<string>('42 Palm Avenue, Apt 3B');
-  const [city, setCity] = useState<string>('Chennai');
-  const [postalCode, setPostalCode] = useState<string>('600028');
+
+  // Address state initialized from localStorage (or empty with clean placeholders)
+  const initialAddress = getSavedAddress();
+  const [street, setStreet] = useState<string>(initialAddress.street);
+  const [city, setCity] = useState<string>(initialAddress.city);
+  const [postalCode, setPostalCode] = useState<string>(initialAddress.postalCode);
   const [customerNotes, setCustomerNotes] = useState<string>('');
+
+  // Dynamic slot availability state
+  const [slotsAvailability, setSlotsAvailability] = useState<ProviderSlotAvailability[]>([]);
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState<boolean>(false);
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<BookingData | null>(null);
 
+  // Fetch real-time provider availability whenever date or provider changes
+  useEffect(() => {
+    if (!isOpen || !provider?.id || !selectedDate) return;
+
+    let isMounted = true;
+    setIsLoadingAvailability(true);
+
+    fetchProviderAvailability(provider.id, selectedDate)
+      .then((data) => {
+        if (isMounted) {
+          setSlotsAvailability(data.slots || []);
+        }
+      })
+      .catch(() => {
+        // Fallback: leave slots as default available if query fails
+        if (isMounted) {
+          setSlotsAvailability([]);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingAvailability(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, provider?.id, selectedDate]);
+
   if (!isOpen) return null;
+
+  // Merge standard time slots with real-time backend availability
+  const effectiveSlots = STANDARD_TIME_SLOTS.map((def) => {
+    const remote = slotsAvailability.find((s) => s.slotIndex === def.slotIndex);
+    return {
+      slotIndex: def.slotIndex,
+      label: def.label,
+      startHour: def.startHour,
+      startMin: def.startMin,
+      endHour: def.endHour,
+      endMin: def.endMin,
+      isAvailable: remote ? remote.isAvailable : true,
+      reason: remote?.reason,
+    };
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,11 +146,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       return;
     }
 
-    const slot = TIME_SLOTS[selectedSlotIndex];
+    const slot = effectiveSlots.find((s) => s.slotIndex === selectedSlotIndex) || effectiveSlots[0];
+    if (!slot.isAvailable) {
+      setErrorMessage('The selected time slot is already booked or unavailable. Please choose an open slot.');
+      return;
+    }
+
     const [year, month, day] = selectedDate.split('-').map(Number);
 
     // Wall-clock time: construct local browser Date so appointment matches customer's selected time.
-    // .toISOString() will accurately convert this local instant into UTC ISO 8601 for backend storage.
     const startTime = new Date(year, month - 1, day, slot.startHour, slot.startMin, 0, 0);
     const endTime = new Date(year, month - 1, day, slot.endHour, slot.endMin, 0, 0);
 
@@ -96,6 +181,16 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         token || ''
       );
 
+      // Save customer address to localStorage for frictionless future bookings
+      try {
+        localStorage.setItem(
+          STORAGE_KEY_ADDRESS,
+          JSON.stringify({ street: street.trim(), city: city.trim(), postalCode: postalCode.trim() })
+        );
+      } catch {
+        // ignore storage errors
+      }
+
       setConfirmedBooking(newBooking);
       if (onBookingSuccess) {
         onBookingSuccess(newBooking);
@@ -107,6 +202,17 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       setIsSubmitting(false);
     }
   };
+
+  const handleDoneAndViewBookings = () => {
+    if (onNavigateToBookings) {
+      onNavigateToBookings();
+    } else if (typeof window !== 'undefined') {
+      window.location.hash = '#/bookings';
+    }
+    onClose();
+  };
+
+  const selectedSlot = effectiveSlots.find((s) => s.slotIndex === selectedSlotIndex) || effectiveSlots[0];
 
   return (
     <div
@@ -149,7 +255,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               <div className="flex justify-between">
                 <span className="text-dwellio-teal/60">Scheduled Window:</span>
                 <span className="font-medium text-dwellio-teal">
-                  {new Date(confirmedBooking.scheduledStartTime).toLocaleDateString()} • {TIME_SLOTS[selectedSlotIndex].label}
+                  {new Date(confirmedBooking.scheduledStartTime).toLocaleDateString()} • {selectedSlot.label}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -160,7 +266,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleDoneAndViewBookings}
               className="w-full inline-flex items-center justify-center px-5 py-3 rounded-xl bg-dwellio-teal text-white font-bold text-sm hover:bg-dwellio-teal/90 shadow transition"
             >
               Done &amp; View Bookings
@@ -195,9 +301,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <p className="text-xs font-bold text-dwellio-teal">{provider.displayName}</p>
                 <p className="text-[11px] text-dwellio-teal/60">{provider.skills.join(', ')} • {provider.serviceArea}</p>
               </div>
-              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                4/4 Verified
-              </span>
+              {provider.verificationStatus === 'approved' ? (
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  Admin Verified
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                  Pending Verification
+                </span>
+              )}
             </div>
 
             {/* Error banner */}
@@ -228,9 +340,16 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
             {/* Date Selection */}
             <div className="mb-4">
-              <label htmlFor="booking-date" className="block text-xs font-bold text-dwellio-teal uppercase tracking-wider mb-1.5">
-                Appointment Date *
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="booking-date" className="block text-xs font-bold text-dwellio-teal uppercase tracking-wider">
+                  Appointment Date *
+                </label>
+                {isLoadingAvailability && (
+                  <span className="text-[10px] text-dwellio-teal/60 animate-pulse font-medium">
+                    Checking availability...
+                  </span>
+                )}
+              </div>
               <input
                 id="booking-date"
                 type="date"
@@ -248,20 +367,34 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 Preferred Time Slot *
               </span>
               <div className="grid grid-cols-2 gap-2">
-                {TIME_SLOTS.map((slot, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setSelectedSlotIndex(idx)}
-                    className={`py-2 px-3 rounded-xl text-xs font-semibold text-center border transition ${
-                      selectedSlotIndex === idx
-                        ? 'bg-dwellio-teal text-white border-dwellio-teal shadow-xs'
-                        : 'bg-dwellio-ivory/60 text-dwellio-teal/80 border-dwellio-mint/60 hover:bg-white'
-                    }`}
-                  >
-                    {slot.label}
-                  </button>
-                ))}
+                {effectiveSlots.map((slot) => {
+                  const isSelected = selectedSlotIndex === slot.slotIndex;
+                  const isAvailable = slot.isAvailable;
+
+                  return (
+                    <button
+                      key={slot.slotIndex}
+                      type="button"
+                      disabled={!isAvailable}
+                      onClick={() => setSelectedSlotIndex(slot.slotIndex)}
+                      className={`py-2 px-3 rounded-xl text-xs font-semibold text-center border transition ${
+                        !isAvailable
+                          ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed line-through'
+                          : isSelected
+                          ? 'bg-dwellio-teal text-white border-dwellio-teal shadow-xs'
+                          : 'bg-dwellio-ivory/60 text-dwellio-teal/80 border-dwellio-mint/60 hover:bg-white'
+                      }`}
+                      title={!isAvailable ? `Slot unavailable (${slot.reason || 'Booked'})` : slot.label}
+                    >
+                      {slot.label}
+                      {!isAvailable && (
+                        <span className="block text-[9px] no-underline font-normal text-rose-600 mt-0.5">
+                          Unavailable
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -277,7 +410,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   value={street}
                   onChange={(e) => setStreet(e.target.value)}
                   required
-                  placeholder="Door/Flat No., Street Name"
+                  placeholder="Door/Flat No., Street Name, Locality"
                   className="w-full rounded-xl border border-dwellio-mint/80 bg-white px-3.5 py-2 text-xs text-dwellio-teal focus:outline-none focus:ring-2 focus:ring-dwellio-teal"
                 />
               </div>
@@ -304,14 +437,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   type="text"
                   value={postalCode}
                   onChange={(e) => setPostalCode(e.target.value)}
-                  placeholder="PIN / ZIP"
+                  placeholder="PIN / Postal Code"
                   className="w-full rounded-xl border border-dwellio-mint/80 bg-white px-3.5 py-2 text-xs text-dwellio-teal focus:outline-none focus:ring-2 focus:ring-dwellio-teal"
                 />
               </div>
             </div>
 
             {/* Customer Notes */}
-            <div className="mb-6">
+            <div className="mb-4">
               <label htmlFor="notes-input" className="block text-xs font-bold text-dwellio-teal uppercase tracking-wider mb-1">
                 Instructions for Technician (Optional)
               </label>
@@ -323,6 +456,17 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 placeholder="E.g. Switchboard in master bedroom sparks when AC turns on..."
                 className="w-full rounded-xl border border-dwellio-mint/80 bg-white p-3 text-xs text-dwellio-teal focus:outline-none focus:ring-2 focus:ring-dwellio-teal"
               />
+            </div>
+
+            {/* Transparent Pricing Notice */}
+            <div className="mb-4 p-3 rounded-2xl bg-dwellio-ivory/70 border border-dwellio-mint/50 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-dwellio-teal/80">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">🏷️</span>
+                <span>
+                  <strong>Transparent Pricing:</strong> Indicative diagnostic visit from <strong>₹499</strong>. Final quotation provided after inspection.
+                </span>
+              </div>
+              <span className="text-[11px] text-dwellio-teal/60 font-medium whitespace-nowrap">Pay On-Site</span>
             </div>
 
             {/* Submit & Cancel */}

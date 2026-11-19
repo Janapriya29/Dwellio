@@ -208,6 +208,41 @@ export interface BookingData {
   updatedAt: string;
 }
 
+// ----------------------------------------------------
+// Standard Time Slots & Availability Engine Types
+// ----------------------------------------------------
+
+export interface StandardTimeSlotDefinition {
+  slotIndex: number;
+  label: string;
+  startHour: number;
+  startMin: number;
+  endHour: number;
+  endMin: number;
+}
+
+export const STANDARD_TIME_SLOTS: StandardTimeSlotDefinition[] = [
+  { slotIndex: 0, label: '09:00 AM – 11:00 AM', startHour: 9, startMin: 0, endHour: 11, endMin: 0 },
+  { slotIndex: 1, label: '11:30 AM – 01:30 PM', startHour: 11, startMin: 30, endHour: 13, endMin: 30 },
+  { slotIndex: 2, label: '02:00 PM – 04:00 PM', startHour: 14, startMin: 0, endHour: 16, endMin: 0 },
+  { slotIndex: 3, label: '04:30 PM – 06:30 PM', startHour: 16, startMin: 30, endHour: 18, endMin: 30 },
+];
+
+export interface ProviderSlotAvailability {
+  slotIndex: number;
+  label: string;
+  startTime: string; // ISO 8601 string
+  endTime: string;   // ISO 8601 string
+  isAvailable: boolean;
+  reason?: string;
+}
+
+export interface ProviderAvailabilityData {
+  providerId: string;
+  date: string; // YYYY-MM-DD
+  slots: ProviderSlotAvailability[];
+}
+
 export interface CreateBookingPayload {
   serviceId: string;
   providerId: string;

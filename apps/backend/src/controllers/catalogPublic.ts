@@ -1,12 +1,22 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { ApiResponse, CategoryData, ServiceData, PublicProviderData } from '@dwellio/shared';
+import {
+  ApiResponse,
+  CategoryData,
+  ServiceData,
+  PublicProviderData,
+  STANDARD_TIME_SLOTS,
+  ProviderAvailabilityData,
+  ProviderSlotAvailability,
+} from '@dwellio/shared';
 import { Category } from '../models/Category';
 import { Service } from '../models/Service';
 import { ProviderProfile } from '../models/ProviderProfile';
+import { SlotReservation } from '../models/SlotReservation';
 import { User } from '../models/User';
 import { toCategoryData, toServiceData, toPublicProviderData } from '../utils/catalog';
-import { escapeRegex } from '../utils/security';
+import { findConflictingProviderBooking } from '../utils/booking';
+import { escapeRegex, sendInternalError } from '../utils/security';
 
 /**
  * Public: Get active service categories
@@ -182,4 +192,109 @@ export const getPublicProviders = async (req: Request, res: Response): Promise<v
     message: 'Approved service providers retrieved.',
     data,
   });
+};
+
+/**
+ * Public: Get provider slot availability for a specified date
+ * GET /api/catalog/providers/:id/availability?date=YYYY-MM-DD[&tzOffset=minutes]
+ */
+export const getProviderAvailability = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      res.status(400).json({ success: false, message: 'Invalid provider ID format.' });
+      return;
+    }
+
+    const { date, tzOffset } = req.query;
+    if (!date || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
+      res.status(400).json({ success: false, message: 'Query parameter date is required in YYYY-MM-DD format.' });
+      return;
+    }
+
+    const cleanDate = date.trim();
+    const [year, month, day] = cleanDate.split('-').map(Number);
+    const dateObj = new Date(year, month - 1, day);
+    if (
+      isNaN(dateObj.getTime()) ||
+      dateObj.getFullYear() !== year ||
+      dateObj.getMonth() !== month - 1 ||
+      dateObj.getDate() !== day
+    ) {
+      res.status(400).json({ success: false, message: 'Invalid calendar date provided.' });
+      return;
+    }
+
+    const provider = await ProviderProfile.findById(id);
+    if (!provider || provider.verificationStatus !== 'approved') {
+      res.status(404).json({ success: false, message: 'Approved service provider not found.' });
+      return;
+    }
+
+    // Timezone offset in minutes (client's getTimezoneOffset(), e.g. -330 for IST)
+    const tzOffsetMinutes = typeof tzOffset === 'string' && !isNaN(parseInt(tzOffset, 10))
+      ? parseInt(tzOffset, 10)
+      : 0;
+
+    const now = Date.now();
+    const slots: ProviderSlotAvailability[] = [];
+
+    for (const def of STANDARD_TIME_SLOTS) {
+      // Calculate UTC timestamp of the slot's start and end corresponding to client wall-clock time
+      const startMs = Date.UTC(year, month - 1, day, def.startHour, def.startMin, 0, 0) + (tzOffsetMinutes * 60000);
+      const endMs = Date.UTC(year, month - 1, day, def.endHour, def.endMin, 0, 0) + (tzOffsetMinutes * 60000);
+
+      const startTime = new Date(startMs);
+      const endTime = new Date(endMs);
+
+      let isAvailable = true;
+      let reason: string | undefined;
+
+      // Check if slot has already elapsed in real time
+      if (startMs <= now) {
+        isAvailable = false;
+        reason = 'Past window';
+      } else {
+        // Check conflicting active bookings
+        const conflict = await findConflictingProviderBooking(provider._id, startTime, endTime);
+        if (conflict) {
+          isAvailable = false;
+          reason = 'Booked';
+        } else {
+          // Check slot reservations
+          const reservedSlot = await SlotReservation.findOne({
+            providerId: provider._id,
+            slotTime: { $gte: startTime, $lt: endTime },
+          });
+          if (reservedSlot) {
+            isAvailable = false;
+            reason = 'Booked';
+          }
+        }
+      }
+
+      slots.push({
+        slotIndex: def.slotIndex,
+        label: def.label,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        isAvailable,
+        reason,
+      });
+    }
+
+    const data: ProviderAvailabilityData = {
+      providerId: provider._id.toString(),
+      date: cleanDate,
+      slots,
+    };
+
+    res.status(200).json({
+      success: true,
+      message: `Availability for ${provider.displayName} retrieved successfully.`,
+      data,
+    });
+  } catch (error: any) {
+    sendInternalError(res, 'CatalogPublic.getProviderAvailability', error, 'Failed to retrieve provider availability.');
+  }
 };

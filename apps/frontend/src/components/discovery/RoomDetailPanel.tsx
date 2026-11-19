@@ -331,6 +331,12 @@ export const RoomDetailPanel: React.FC<RoomDetailPanelProps> = ({
           services={services}
           selectedRoom={selectedRoom}
           onClose={() => setSelectedProviderForBooking(null)}
+          onNavigateToBookings={() => {
+            setSelectedProviderForBooking(null);
+            if (typeof window !== 'undefined') {
+              window.location.hash = '#/bookings';
+            }
+          }}
         />
       )}
     </aside>

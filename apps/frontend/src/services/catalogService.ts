@@ -1,4 +1,4 @@
-import { ApiResponse, CategoryData, ServiceData, PublicProviderData, HouseRoom } from '@dwellio/shared';
+import { ApiResponse, CategoryData, ServiceData, PublicProviderData, HouseRoom, ProviderAvailabilityData } from '@dwellio/shared';
 import { createApiUrl } from '../config/api';
 
 /**
@@ -73,4 +73,31 @@ export const fetchApprovedProviders = async (
 
   const json: ApiResponse<PublicProviderData[]> = await res.json();
   return json.data || [];
+};
+
+/**
+ * Fetch provider slot availability for a specified date and wall-clock timezone offset.
+ */
+export const fetchProviderAvailability = async (
+  providerId: string,
+  dateStr: string,
+  tzOffset?: number
+): Promise<ProviderAvailabilityData> => {
+  const url = createApiUrl(`/catalog/providers/${encodeURIComponent(providerId)}/availability`);
+  url.searchParams.append('date', dateStr);
+  const offset = tzOffset !== undefined ? tzOffset : new Date().getTimezoneOffset();
+  url.searchParams.append('tzOffset', offset.toString());
+
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    const errorJson = await res.json().catch(() => ({}));
+    throw new Error(errorJson.message || `Failed to load provider availability: HTTP ${res.status}`);
+  }
+
+  const json: ApiResponse<ProviderAvailabilityData> = await res.json();
+  if (!json.data) {
+    throw new Error('Malformed availability response from server.');
+  }
+
+  return json.data;
 };

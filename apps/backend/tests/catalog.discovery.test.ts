@@ -6,6 +6,8 @@ import { User } from '../src/models/User';
 import { ProviderProfile } from '../src/models/ProviderProfile';
 import { Category } from '../src/models/Category';
 import { Service } from '../src/models/Service';
+import { Booking } from '../src/models/Booking';
+import { SlotReservation } from '../src/models/SlotReservation';
 import { connectTestDb, clearTestDb, disconnectTestDb } from './setup';
 import { generateToken } from '../src/utils/auth';
 
@@ -23,6 +25,8 @@ describe('Phase 5: Service Catalog & Public Discovery Tests', () => {
     await ProviderProfile.syncIndexes();
     await Category.syncIndexes();
     await Service.syncIndexes();
+    await Booking.syncIndexes();
+    await SlotReservation.syncIndexes();
   });
 
   afterAll(async () => {
@@ -188,6 +192,10 @@ describe('Phase 5: Service Catalog & Public Discovery Tests', () => {
   describe('3. Public Discovery Endpoints', () => {
     let activeCat: any;
     let inactiveCat: any;
+    let activeSvc: any;
+    let approvedProUser: any;
+    let approvedProProfile: any;
+    let pendingProProfile: any;
 
     beforeEach(async () => {
       // 1. Active category mapped to kitchen & bath
@@ -207,7 +215,7 @@ describe('Phase 5: Service Catalog & Public Discovery Tests', () => {
       }).save();
 
       // Services under activeCat
-      await new Service({
+      activeSvc = await new Service({
         categoryId: activeCat._id,
         name: 'Active Kitchen Service',
         slug: 'active-kitchen-service',
@@ -222,7 +230,7 @@ describe('Phase 5: Service Catalog & Public Discovery Tests', () => {
       }).save();
 
       // Providers: 1 approved, 1 pending, 1 rejected
-      const approvedUser = await new User({
+      approvedProUser = await new User({
         name: 'Approved Pro',
         email: 'approved.pro@example.com',
         passwordHash: 'dummy_hash',
@@ -230,8 +238,8 @@ describe('Phase 5: Service Catalog & Public Discovery Tests', () => {
         isActive: true,
       }).save();
 
-      await new ProviderProfile({
-        userId: approvedUser._id,
+      approvedProProfile = await new ProviderProfile({
+        userId: approvedProUser._id,
         displayName: 'Approved Pro Works',
         phone: '1234567890',
         serviceArea: 'Downtown',
@@ -248,7 +256,7 @@ describe('Phase 5: Service Catalog & Public Discovery Tests', () => {
         isActive: true,
       }).save();
 
-      await new ProviderProfile({
+      pendingProProfile = await new ProviderProfile({
         userId: pendingUser._id,
         displayName: 'Pending Pro Works',
         phone: '1234567890',
@@ -318,6 +326,103 @@ describe('Phase 5: Service Catalog & Public Discovery Tests', () => {
 
       // Security check: ensure passwordHash is never returned
       expect(JSON.stringify(res.body)).not.toContain('passwordHash');
+    });
+
+    it('GET /api/catalog/providers/:id/availability should validate provider ID and date format', async () => {
+      // Invalid provider ID
+      const resBadId = await request(app).get('/api/catalog/providers/not-a-valid-id/availability?date=2026-11-20');
+      expect(resBadId.status).toBe(400);
+      expect(resBadId.body.message).toMatch(/invalid provider id/i);
+
+      // Missing date
+      const resNoDate = await request(app).get(`/api/catalog/providers/${approvedProProfile._id}/availability`);
+      expect(resNoDate.status).toBe(400);
+      expect(resNoDate.body.message).toMatch(/query parameter date is required/i);
+
+      // Malformed date
+      const resBadDate = await request(app).get(`/api/catalog/providers/${approvedProProfile._id}/availability?date=invalid-date`);
+      expect(resBadDate.status).toBe(400);
+      expect(resBadDate.body.message).toMatch(/query parameter date is required/i);
+
+      // Non-existent or pending provider
+      const fakeId = new mongoose.Types.ObjectId();
+      const resNotFound = await request(app).get(`/api/catalog/providers/${fakeId}/availability?date=2026-11-20`);
+      expect(resNotFound.status).toBe(404);
+      expect(resNotFound.body.message).toMatch(/approved service provider not found/i);
+
+      const resPending = await request(app).get(`/api/catalog/providers/${pendingProProfile._id}/availability?date=2026-11-20`);
+      expect(resPending.status).toBe(404);
+      expect(resPending.body.message).toMatch(/approved service provider not found/i);
+    });
+
+    it('GET /api/catalog/providers/:id/availability should calculate slot availability and detect conflicts accurately', async () => {
+      // Future date 7 days from now
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() + 7);
+      const dateStr = targetDate.toISOString().split('T')[0];
+
+      // Query availability when provider has no bookings
+      const freeRes = await request(app).get(`/api/catalog/providers/${approvedProProfile._id}/availability?date=${dateStr}&tzOffset=0`);
+      expect(freeRes.status).toBe(200);
+      expect(freeRes.body.success).toBe(true);
+      expect(freeRes.body.data.providerId).toBe(approvedProProfile._id.toString());
+      expect(freeRes.body.data.date).toBe(dateStr);
+      expect(freeRes.body.data.slots).toHaveLength(4);
+
+      // All 4 slots should initially be available
+      freeRes.body.data.slots.forEach((s: any) => {
+        expect(s.isAvailable).toBe(true);
+      });
+
+      // Now create an accepted booking overlapping the first slot (09:00 - 11:00 UTC)
+      const [year, month, day] = dateStr.split('-').map(Number);
+      const slot0Start = new Date(Date.UTC(year, month - 1, day, 9, 0, 0, 0));
+      const slot0End = new Date(Date.UTC(year, month - 1, day, 11, 0, 0, 0));
+
+      const bookedJob = new Booking({
+        customerId: customerUser._id,
+        providerId: approvedProProfile._id,
+        providerUserId: approvedProUser._id,
+        serviceId: activeSvc._id,
+        categoryId: activeCat._id,
+        scheduledStartTime: slot0Start,
+        scheduledEndTime: slot0End,
+        address: { street: '10 Marine Drive', city: 'Metro City' },
+        status: 'accepted',
+        statusHistory: [
+          {
+            actorId: approvedProUser._id,
+            actorRole: 'provider',
+            fromStatus: 'requested',
+            toStatus: 'accepted',
+            timestamp: new Date(),
+          },
+        ],
+      });
+      await bookedJob.save();
+
+      // Also create a SlotReservation record for slot 0
+      await new SlotReservation({
+        providerId: approvedProProfile._id,
+        slotTime: slot0Start,
+        bookingId: bookedJob._id,
+      }).save();
+
+      // Query availability again
+      const busyRes = await request(app).get(`/api/catalog/providers/${approvedProProfile._id}/availability?date=${dateStr}&tzOffset=0`);
+      expect(busyRes.status).toBe(200);
+      expect(busyRes.body.data.slots).toHaveLength(4);
+
+      // Slot 0 (09:00 AM - 11:00 AM) must now be marked isAvailable: false
+      const slot0 = busyRes.body.data.slots[0];
+      expect(slot0.label).toBe('09:00 AM – 11:00 AM');
+      expect(slot0.isAvailable).toBe(false);
+      expect(slot0.reason).toBe('Booked');
+
+      // Remaining slots must remain available
+      expect(busyRes.body.data.slots[1].isAvailable).toBe(true);
+      expect(busyRes.body.data.slots[2].isAvailable).toBe(true);
+      expect(busyRes.body.data.slots[3].isAvailable).toBe(true);
     });
   });
 });
