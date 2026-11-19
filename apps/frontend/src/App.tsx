@@ -9,11 +9,13 @@ import { AdminDashboardLayout } from './components/admin/AdminDashboardLayout';
 import { NotificationBell } from './components/notification/NotificationBell';
 import { AuthModal, AuthModalMode } from './components/auth/AuthModal';
 import { CustomerProfileModal } from './components/account/CustomerProfileModal';
+import { MobileBottomNav } from './components/navigation/MobileBottomNav';
 
 export type AppTab = 'landing' | 'discover' | 'my-bookings' | 'provider-portal' | 'admin-dashboard';
 
-const parseHashToTab = (hash: string): AppTab | null => {
-  const clean = hash.replace(/^#\/?/, '').toLowerCase();
+export const parseHashToTab = (hash: string): AppTab | null => {
+  const [routePart] = hash.split('?');
+  const clean = routePart.replace(/^#\/?/, '').toLowerCase();
   if (!clean || clean === 'home' || clean === 'landing') return 'landing';
   if (clean === 'discover' || clean === 'services' || clean === 'cutaway') return 'discover';
   if (clean === 'my-bookings' || clean === 'bookings') return 'my-bookings';
@@ -58,6 +60,7 @@ const MainLayout: React.FC = () => {
   const [authModalMode, setAuthModalMode] = useState<AuthModalMode>('login');
   const [postLoginRedirect, setPostLoginRedirect] = useState<AppTab | undefined>(undefined);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState<number>(0);
 
   const setActiveTab = (tab: AppTab) => {
     setActiveTabState(tab);
@@ -91,67 +94,34 @@ const MainLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-dwellio-ivory text-dwellio-teal flex flex-col justify-between">
-      {/* Top Header */}
+      {/* Top Header - Streamlined ~56px single-row mobile bar (h-14 md:h-16) */}
       <header className="border-b border-dwellio-mint/30 bg-white/80 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center justify-between gap-3">
           {/* Brand Logo & Tagline */}
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setActiveTab('landing')}
-              className="flex items-center gap-3 text-left group"
-              title="Dwellio Home"
-            >
-              <span className="w-10 h-10 rounded-2xl bg-dwellio-teal flex items-center justify-center shadow-xs text-dwellio-mint font-bold text-xl group-hover:opacity-90 transition">
-                D
-              </span>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-2xl font-black tracking-tight text-dwellio-teal">
-                    Dwellio
-                  </span>
-                  <span className="w-2 h-2 rounded-xs bg-[#D9653B]" aria-hidden="true" />
-                </div>
-                <p className="text-xs font-medium text-dwellio-teal/70 hidden sm:block">
-                  Your Home, in Good Hands.
-                </p>
+          <button
+            type="button"
+            onClick={() => setActiveTab('landing')}
+            className="flex items-center gap-2.5 sm:gap-3 text-left group shrink-0"
+            title="Dwellio Home"
+          >
+            <span className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-dwellio-teal flex items-center justify-center shadow-xs text-dwellio-mint font-bold text-base sm:text-xl group-hover:opacity-90 transition">
+              D
+            </span>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xl sm:text-2xl font-black tracking-tight text-dwellio-teal">
+                  Dwellio
+                </span>
+                <span className="w-2 h-2 rounded-xs bg-[#D9653B]" aria-hidden="true" />
               </div>
-            </button>
-
-            {/* Quick Mobile Auth / Status */}
-            <div className="md:hidden flex items-center gap-2">
-              {isAuthenticated ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setIsProfileModalOpen(true)}
-                    className="px-2.5 py-1 rounded-xl text-xs font-bold text-dwellio-teal bg-dwellio-ivory border border-dwellio-mint"
-                    title="Account & Profile"
-                  >
-                    👤 Profile
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="px-2.5 py-1 rounded-xl text-xs font-bold text-dwellio-teal bg-dwellio-ivory border border-dwellio-mint"
-                  >
-                    Sign Out
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => openAuth('login')}
-                  className="px-3 py-1 rounded-xl text-xs font-bold bg-dwellio-teal text-white shadow-xs"
-                >
-                  Sign In
-                </button>
-              )}
+              <p className="text-xs font-medium text-dwellio-teal/70 hidden sm:block">
+                Your Home, in Good Hands.
+              </p>
             </div>
-          </div>
+          </button>
 
-          {/* Navigation Links & Persona Views */}
-          <nav className="flex items-center gap-1.5 bg-dwellio-ivory/80 p-1 rounded-2xl border border-dwellio-mint/50 overflow-x-auto scrollbar-none">
+          {/* Desktop Navigation Links & Persona Views (hidden on mobile) */}
+          <nav className="hidden md:flex items-center gap-1.5 bg-dwellio-ivory/80 p-1 rounded-2xl border border-dwellio-mint/50 overflow-x-auto scrollbar-none">
             {/* Home Link */}
             <button
               type="button"
@@ -241,12 +211,27 @@ const MainLayout: React.FC = () => {
             )}
           </nav>
 
-          {/* Right Header Area: Authenticated Profile OR Public Auth CTAs */}
-          <div className="flex items-center gap-2 self-end md:self-auto">
+          {/* Right Header Controls (Unified for Mobile & Desktop) */}
+          <div className="flex items-center gap-2">
             {isAuthenticated ? (
               <>
-                <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
+                <NotificationBell
+                  onNavigate={(tab) => setActiveTab(tab)}
+                  onUnreadCountChange={setUnreadNotificationCount}
+                />
 
+                {/* Mobile compact profile trigger */}
+                <button
+                  type="button"
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="md:hidden p-1.5 rounded-xl text-sm font-bold text-dwellio-teal bg-dwellio-ivory border border-dwellio-mint hover:bg-dwellio-mint/20 transition flex items-center justify-center min-w-[36px] min-h-[36px]"
+                  title="Account & Profile"
+                  aria-label="Account & Profile"
+                >
+                  👤
+                </button>
+
+                {/* Desktop profile description */}
                 <button
                   type="button"
                   onClick={() => setIsProfileModalOpen(true)}
@@ -266,10 +251,11 @@ const MainLayout: React.FC = () => {
                   </span>
                 </button>
 
+                {/* Desktop Sign Out button (removed duplicate mobile button) */}
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-dwellio-teal hover:bg-dwellio-mint/30 border border-dwellio-mint/80 transition"
+                  className="hidden md:inline-flex px-3 py-1.5 rounded-xl text-xs font-bold text-dwellio-teal hover:bg-dwellio-mint/30 border border-dwellio-mint/80 transition"
                   title="Sign out of current account"
                 >
                   Sign Out
@@ -296,7 +282,7 @@ const MainLayout: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => openAuth('register-customer')}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-dwellio-teal text-white hover:opacity-90 transition shadow-xs"
+                  className="hidden sm:inline-flex px-3.5 py-1.5 rounded-xl text-xs font-bold bg-dwellio-teal text-white hover:opacity-90 transition shadow-xs"
                 >
                   Sign Up
                 </button>
@@ -345,8 +331,8 @@ const MainLayout: React.FC = () => {
         </div>
       </header>
 
-      {/* Main View Area */}
-      <main className="flex-1">
+      {/* Main View Area with safe mobile bottom padding */}
+      <main className="flex-1 pb-20 md:pb-0">
         {activeTab === 'landing' && (
           <LandingPage
             onExploreServices={(room) => {
@@ -554,6 +540,17 @@ const MainLayout: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      {/* Mobile Bottom Navigation Bar (md:hidden) */}
+      <MobileBottomNav
+        activeTab={activeTab}
+        userRole={user?.role}
+        isAuthenticated={isAuthenticated}
+        hasUnreadAlerts={unreadNotificationCount > 0}
+        onSelectTab={(tab) => setActiveTab(tab)}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
+        onOpenLogin={() => openAuth('login')}
+      />
     </div>
   );
 };

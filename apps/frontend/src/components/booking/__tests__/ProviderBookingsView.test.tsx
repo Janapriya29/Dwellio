@@ -134,4 +134,55 @@ describe('ProviderBookingsView Component', () => {
       );
     });
   });
+
+  it('highlights and scrolls to target incoming request when deep-linked with bookingId', async () => {
+    const scrollIntoViewMock = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoViewMock;
+    window.location.hash = '#/provider?bookingId=book-req-001';
+
+    vi.mocked(bookingService.fetchProviderBookings).mockResolvedValue([
+      mockIncomingRequest,
+      mockAcceptedJob,
+    ]);
+
+    render(
+      <AuthProvider>
+        <ProviderBookingsView />
+      </AuthProvider>
+    );
+
+    const targetCard = await screen.findByTestId('provider-booking-book-req-001');
+    const otherCard = screen.getByTestId('provider-booking-book-acc-002');
+
+    await waitFor(() => {
+      expect(targetCard.className).toContain('ring-[#D9653B]/30');
+      expect(otherCard.className).not.toContain('ring-[#D9653B]/30');
+      expect(scrollIntoViewMock).toHaveBeenCalled();
+    });
+
+    window.location.hash = '';
+  });
+
+  it('handles non-matching bookingId gracefully without crashing or highlighting unrelated provider cards', async () => {
+    window.location.hash = '#/provider?bookingId=non-existent-job-404';
+
+    vi.mocked(bookingService.fetchProviderBookings).mockResolvedValue([
+      mockIncomingRequest,
+      mockAcceptedJob,
+    ]);
+
+    render(
+      <AuthProvider>
+        <ProviderBookingsView />
+      </AuthProvider>
+    );
+
+    const reqCard = await screen.findByTestId('provider-booking-book-req-001');
+    const jobCard = screen.getByTestId('provider-booking-book-acc-002');
+
+    expect(reqCard.className).not.toContain('ring-[#D9653B]/30');
+    expect(jobCard.className).not.toContain('ring-[#D9653B]/30');
+
+    window.location.hash = '';
+  });
 });

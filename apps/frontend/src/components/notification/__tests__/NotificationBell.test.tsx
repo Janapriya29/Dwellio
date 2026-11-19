@@ -1,9 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { NotificationBell } from '../NotificationBell';
 import { AuthProvider } from '../../../context/AuthContext';
 import * as notificationService from '../../../services/notificationService';
 import { NotificationData } from '@dwellio/shared';
+
+// Mock stream service
+let streamCallbacks: { onNotification?: (n: any) => void; onError?: (err: any) => void } = {};
+
+vi.mock('../../../services/notificationStreamService', () => ({
+  connectNotificationStream: vi.fn((_token: string, callbacks: any) => {
+    streamCallbacks = callbacks;
+    return vi.fn();
+  }),
+}));
 
 // Mock the notification service
 vi.mock('../../../services/notificationService', () => ({
@@ -296,6 +306,93 @@ describe('NotificationBell Component', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Booking Accepted')).toBeInTheDocument();
+    });
+  });
+
+  it('increments unread count and displays toast alert when live notification arrives via SSE', async () => {
+    render(
+      <AuthProvider>
+        <NotificationBell />
+      </AuthProvider>
+    );
+
+    // Initial unread count is 2
+    await waitFor(() => {
+      expect(screen.getByTestId('notification-unread-badge')).toHaveTextContent('2');
+    });
+
+    // Simulate incoming SSE event
+    act(() => {
+      streamCallbacks.onNotification?.({
+        id: 'notif-live-99',
+        recipientId: 'demo-customer-id',
+        type: 'BOOKING_CONFIRMED',
+        title: 'Booking Confirmed!',
+        message: 'Your service request has been confirmed.',
+        bookingId: 'book-999',
+        isRead: false,
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    // Unread count should increment from 2 to 3
+    await waitFor(() => {
+      expect(screen.getByTestId('notification-unread-badge')).toHaveTextContent('3');
+      expect(screen.getByText('Booking Confirmed!')).toBeInTheDocument();
+    });
+  });
+
+  it('renders mobile bottom sheet when viewport width is below 640px', async () => {
+    // Set viewport to mobile width
+    window.innerWidth = 375;
+    fireEvent(window, new Event('resize'));
+
+    render(
+      <AuthProvider>
+        <NotificationBell />
+      </AuthProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /notifications/i }));
+
+    const sheet = await screen.findByTestId('notification-bottom-sheet');
+    expect(sheet).toBeInTheDocument();
+
+    // Reset back to desktop default
+    window.innerWidth = 1024;
+    fireEvent(window, new Event('resize'));
+  });
+
+  it('triggers onUnreadCountChange callback when unread count is updated or live notification arrives', async () => {
+    const handleUnreadCountChange = vi.fn();
+
+    render(
+      <AuthProvider>
+        <NotificationBell onUnreadCountChange={handleUnreadCountChange} />
+      </AuthProvider>
+    );
+
+    // Initial count is 2
+    await waitFor(() => {
+      expect(handleUnreadCountChange).toHaveBeenCalledWith(2);
+    });
+
+    // Simulate incoming SSE event
+    act(() => {
+      streamCallbacks.onNotification?.({
+        id: 'notif-live-count-test',
+        recipientId: 'demo-customer-id',
+        type: 'BOOKING_ACCEPTED',
+        title: 'New Alert',
+        message: 'Alert message.',
+        isRead: false,
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    // Unread count increments to 3 and triggers callback
+    await waitFor(() => {
+      expect(handleUnreadCountChange).toHaveBeenCalledWith(3);
     });
   });
 });

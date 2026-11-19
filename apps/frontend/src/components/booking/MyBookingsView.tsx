@@ -41,6 +41,15 @@ const getStatusBadge = (status: BookingStatus) => {
   }
 };
 
+const getBookingIdFromHash = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  const hash = window.location.hash;
+  const qIdx = hash.indexOf('?');
+  if (qIdx === -1) return null;
+  const params = new URLSearchParams(hash.slice(qIdx + 1));
+  return params.get('bookingId');
+};
+
 export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreServices, onOpenLogin }) => {
   const { token, user } = useAuth();
   const [bookings, setBookings] = useState<BookingData[]>([]);
@@ -55,6 +64,45 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
   const [reviewsByBookingId, setReviewsByBookingId] = useState<Record<string, ReviewData>>({});
   const [reschedulingBooking, setReschedulingBooking] = useState<BookingData | null>(null);
   const [rescheduleSuccessBanner, setRescheduleSuccessBanner] = useState<string | null>(null);
+  const [highlightedBookingId, setHighlightedBookingId] = useState<string | null>(() => getBookingIdFromHash());
+
+  // Listen to hash changes (e.g. clicking notification while already on the tab, or browser navigation)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const id = getBookingIdFromHash();
+      setHighlightedBookingId(id);
+      if (id) {
+        setSelectedFilter(undefined);
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Scroll to target booking once data is loaded and apply highlight
+  useEffect(() => {
+    if (!isLoading && highlightedBookingId && bookings.length > 0) {
+      const targetBooking = bookings.find((b) => b.id === highlightedBookingId);
+      if (targetBooking) {
+        const timer = setTimeout(() => {
+          const el = document.getElementById(`booking-card-${highlightedBookingId}`);
+          if (el && typeof el.scrollIntoView === 'function') {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+
+        const clearTimer = setTimeout(() => {
+          setHighlightedBookingId(null);
+        }, 6000);
+
+        return () => {
+          clearTimeout(timer);
+          clearTimeout(clearTimer);
+        };
+      }
+    }
+  }, [isLoading, highlightedBookingId, bookings]);
 
   const loadBookings = useCallback(async () => {
     if (!token) {
@@ -267,10 +315,17 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
           {bookings.map((booking) => {
             const canCancel = booking.status === 'requested' || booking.status === 'accepted';
             const existingReview = reviewsByBookingId[booking.id];
+            const isHighlighted = highlightedBookingId === booking.id;
             return (
               <div
                 key={booking.id}
-                className="bg-white rounded-3xl p-6 border border-dwellio-mint/50 shadow-xs hover:border-dwellio-teal/30 transition"
+                id={`booking-card-${booking.id}`}
+                data-testid={`booking-card-${booking.id}`}
+                className={`bg-white rounded-3xl p-6 border transition duration-200 ${
+                  isHighlighted
+                    ? 'border-[#D9653B] ring-4 ring-[#D9653B]/30 shadow-lg'
+                    : 'border-dwellio-mint/50 shadow-xs hover:border-dwellio-teal/30'
+                }`}
               >
                 {/* Top Row: Service + Status Badge */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-dwellio-mint/30 pb-4 mb-4">

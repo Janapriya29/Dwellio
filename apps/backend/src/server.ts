@@ -1,6 +1,7 @@
 import { createApp } from './app';
 import { config, validateConfig } from './config/env';
 import { connectDatabase, disconnectDatabase, sanitizeMongoUri } from './config/db';
+import { notificationStreamService } from './services/notificationStream';
 
 const startServer = async (): Promise<void> => {
   try {
@@ -34,6 +35,9 @@ const startServer = async (): Promise<void> => {
       isShuttingDown = true;
 
       console.log(`\nReceived ${signal}. Starting graceful shutdown...`);
+
+      // Close all live notification streams
+      notificationStreamService.closeAllClients();
 
       server.close(async () => {
         console.log('[Shutdown] HTTP server closed.');

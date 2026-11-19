@@ -15,7 +15,7 @@ export interface CustomerProfileModalProps {
 }
 
 export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({ isOpen, onClose }) => {
-  const { user, token, updateUser } = useAuth();
+  const { user, token, updateUser, logout } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'details' | 'addresses'>('details');
 
@@ -255,21 +255,35 @@ export const CustomerProfileModal: React.FC<CustomerProfileModalProps> = ({ isOp
               </span>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-dwellio-mint/30">
+            <div className="flex items-center justify-between pt-3 border-t border-dwellio-mint/30">
               <button
                 type="button"
-                onClick={onClose}
-                className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-600 hover:bg-slate-50 transition"
+                onClick={() => {
+                  logout();
+                  onClose();
+                }}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition flex items-center gap-1.5"
+                title="Sign out of your account"
               >
-                Close
+                <span>🚪</span>
+                <span>Sign Out</span>
               </button>
-              <button
-                type="submit"
-                disabled={isSavingProfile}
-                className="px-5 py-2 rounded-xl bg-dwellio-teal text-white text-xs font-bold hover:bg-dwellio-teal/90 transition shadow-xs disabled:opacity-50"
-              >
-                {isSavingProfile ? 'Saving...' : 'Save Profile'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-600 hover:bg-slate-50 transition"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingProfile}
+                  className="px-5 py-2 rounded-xl bg-dwellio-teal text-white text-xs font-bold hover:bg-dwellio-teal/90 transition shadow-xs disabled:opacity-50"
+                >
+                  {isSavingProfile ? 'Saving...' : 'Save Profile'}
+                </button>
+              </div>
             </div>
           </form>
         )}

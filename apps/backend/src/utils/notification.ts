@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { NotificationData, NotificationType } from '@dwellio/shared';
 import { Notification, INotification } from '../models/Notification';
+import { notificationStreamService } from '../services/notificationStream';
 
 export interface CreateNotificationInput {
   recipientId: Types.ObjectId | string;
@@ -61,6 +62,16 @@ export const sendInAppNotification = async (
     });
 
     const saved = await notification.save();
+
+    // Broadcast in real-time to active SSE streams (non-blocking)
+    try {
+      const dto = formatNotificationDto(saved);
+      notificationStreamService.broadcastToUser(saved.recipientId.toString(), dto);
+    } catch (streamErr) {
+      // Do not allow stream broadcast failure to affect notification persistence
+      console.warn('[NotificationService] SSE broadcast error:', streamErr);
+    }
+
     return saved;
   } catch (error: any) {
     // If MongoDB confirms a duplicate key error on the deduplication index (code 11000),

@@ -161,4 +161,49 @@ describe('MyBookingsView Component', () => {
       expect(screen.queryByRole('button', { name: /cancel booking/i })).not.toBeInTheDocument();
     });
   });
+
+  it('highlights and scrolls to the target booking when deep-linked with bookingId query parameter', async () => {
+    const scrollIntoViewMock = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoViewMock;
+    window.location.hash = '#/bookings?bookingId=book-00112233';
+
+    vi.mocked(bookingService.fetchCustomerBookings).mockResolvedValue(mockBookings);
+
+    render(
+      <AuthProvider>
+        <MyBookingsView onExploreServices={vi.fn()} />
+      </AuthProvider>
+    );
+
+    const card = await screen.findByTestId('booking-card-book-00112233');
+    expect(card).toBeInTheDocument();
+
+    // Verify ring highlight is applied to the target booking
+    await waitFor(() => {
+      expect(card.className).toContain('ring-[#D9653B]/30');
+      expect(scrollIntoViewMock).toHaveBeenCalled();
+    });
+
+    window.location.hash = '';
+  });
+
+  it('handles non-existent bookingId in hash gracefully without crashing or highlighting unrelated cards', async () => {
+    window.location.hash = '#/bookings?bookingId=non-existent-id-999';
+
+    vi.mocked(bookingService.fetchCustomerBookings).mockResolvedValue(mockBookings);
+
+    render(
+      <AuthProvider>
+        <MyBookingsView onExploreServices={vi.fn()} />
+      </AuthProvider>
+    );
+
+    const card = await screen.findByTestId('booking-card-book-00112233');
+    expect(card).toBeInTheDocument();
+
+    // Non-existent ID: the unrelated card must NOT have the highlight ring
+    expect(card.className).not.toContain('ring-[#D9653B]/30');
+
+    window.location.hash = '';
+  });
 });

@@ -9,6 +9,15 @@ import {
 } from '../../services/bookingService';
 import { fetchBookingReview, replyToReview } from '../../services/reviewService';
 
+const getBookingIdFromHash = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  const hash = window.location.hash;
+  const qIdx = hash.indexOf('?');
+  if (qIdx === -1) return null;
+  const params = new URLSearchParams(hash.slice(qIdx + 1));
+  return params.get('bookingId');
+};
+
 export const ProviderBookingsView: React.FC = () => {
   const { token, user, switchDemoRole } = useAuth();
   const [bookings, setBookings] = useState<BookingData[]>([]);
@@ -25,6 +34,41 @@ export const ProviderBookingsView: React.FC = () => {
   const [replyText, setReplyText] = useState<string>('');
   const [isSubmittingReply, setIsSubmittingReply] = useState<boolean>(false);
   const [replyError, setReplyError] = useState<string | null>(null);
+  const [highlightedBookingId, setHighlightedBookingId] = useState<string | null>(() => getBookingIdFromHash());
+
+  // Listen to hash changes (e.g. clicking notification while already on the tab, or browser navigation)
+  useEffect(() => {
+    const handleHashChange = () => {
+      setHighlightedBookingId(getBookingIdFromHash());
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Scroll to target booking once data is loaded and apply highlight
+  useEffect(() => {
+    if (!isLoading && highlightedBookingId && bookings.length > 0) {
+      const match = bookings.find((b) => b.id === highlightedBookingId);
+      if (match) {
+        const timer = setTimeout(() => {
+          const el = document.getElementById(`provider-booking-${highlightedBookingId}`);
+          if (el && typeof el.scrollIntoView === 'function') {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+
+        const clearTimer = setTimeout(() => {
+          setHighlightedBookingId(null);
+        }, 6000);
+
+        return () => {
+          clearTimeout(timer);
+          clearTimeout(clearTimer);
+        };
+      }
+    }
+  }, [isLoading, highlightedBookingId, bookings]);
 
   const loadBookings = useCallback(async () => {
     if (!token) return;
@@ -227,11 +271,19 @@ export const ProviderBookingsView: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {incomingRequests.map((req) => (
-                  <div
-                    key={req.id}
-                    className="bg-white rounded-3xl p-6 border-2 border-amber-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4"
-                  >
+                {incomingRequests.map((req) => {
+                  const isHighlighted = highlightedBookingId === req.id;
+                  return (
+                    <div
+                      key={req.id}
+                      id={`provider-booking-${req.id}`}
+                      data-testid={`provider-booking-${req.id}`}
+                      className={`bg-white rounded-3xl p-6 border-2 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition duration-200 ${
+                        isHighlighted
+                          ? 'border-[#D9653B] ring-4 ring-[#D9653B]/30 shadow-lg'
+                          : 'border-amber-200'
+                      }`}
+                    >
                     <div className="space-y-1 text-xs">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-[10px] font-bold text-slate-400">
@@ -276,7 +328,8 @@ export const ProviderBookingsView: React.FC = () => {
                       </button>
                     </div>
                   </div>
-                ))}
+                );
+              })}
               </div>
             )}
           </div>
@@ -298,11 +351,19 @@ export const ProviderBookingsView: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {activeJobs.map((job) => (
-                  <div
-                    key={job.id}
-                    className="bg-white rounded-3xl p-6 border border-dwellio-mint/60 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4"
-                  >
+                {activeJobs.map((job) => {
+                  const isHighlighted = highlightedBookingId === job.id;
+                  return (
+                    <div
+                      key={job.id}
+                      id={`provider-booking-${job.id}`}
+                      data-testid={`provider-booking-${job.id}`}
+                      className={`bg-white rounded-3xl p-6 border shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition duration-200 ${
+                        isHighlighted
+                          ? 'border-[#D9653B] ring-4 ring-[#D9653B]/30 shadow-lg'
+                          : 'border-dwellio-mint/60'
+                      }`}
+                    >
                     <div className="space-y-1 text-xs">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-[10px] font-bold text-slate-400">
@@ -358,7 +419,8 @@ export const ProviderBookingsView: React.FC = () => {
                       )}
                     </div>
                   </div>
-                ))}
+                );
+              })}
               </div>
             )}
           </div>
@@ -374,10 +436,18 @@ export const ProviderBookingsView: React.FC = () => {
                   const review = reviewsByBookingId[job.id];
                   const isReplying = review && replyingReviewId === review.id;
 
+                  const isHighlighted = highlightedBookingId === job.id;
+
                   return (
                     <div
                       key={job.id}
-                      className="bg-white rounded-3xl p-5 border border-dwellio-mint/60 shadow-xs"
+                      id={`provider-booking-${job.id}`}
+                      data-testid={`provider-booking-${job.id}`}
+                      className={`bg-white rounded-3xl p-5 border shadow-xs transition duration-200 ${
+                        isHighlighted
+                          ? 'border-[#D9653B] ring-4 ring-[#D9653B]/30 shadow-lg'
+                          : 'border-dwellio-mint/60'
+                      }`}
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-dwellio-mint/30 pb-3 mb-3">
                         <div>

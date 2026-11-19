@@ -10,9 +10,12 @@ import {
   markNotificationAsRead,
   markAllNotificationsAsRead,
 } from '../../services/notificationService';
+import { connectNotificationStream } from '../../services/notificationStreamService';
+import { NotificationToastContainer, ToastItem } from './NotificationToast';
 
 export interface NotificationBellProps {
   onNavigate?: (tab: 'discover' | 'my-bookings' | 'provider-portal' | 'admin-dashboard') => void;
+  onUnreadCountChange?: (count: number) => void;
 }
 
 const getNotificationIcon = (type: NotificationType): string => {
@@ -31,6 +34,8 @@ const getNotificationIcon = (type: NotificationType): string => {
       return '🎉';
     case 'BOOKING_CANCELLED':
       return '⚠️';
+    case 'BOOKING_RESCHEDULED':
+      return '🔄';
     case 'REVIEW_RECEIVED':
       return '⭐';
     case 'REVIEW_REPLIED':
@@ -80,18 +85,39 @@ const getTargetTab = (
   return 'my-bookings';
 };
 
-export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }) => {
+export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate, onUnreadCountChange }) => {
   const { user, token } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  // Synchronize unread count with parent layout (e.g. mobile bottom navigation indicator)
+  useEffect(() => {
+    onUnreadCountChange?.(unreadCount);
+  }, [unreadCount, onUnreadCountChange]);
   const [notifications, setNotifications] = useState<NotificationData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 640;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load unread count safely
+  // Load unread count safely from MongoDB API
   const refreshUnreadCount = useCallback(async () => {
     if (!token) return;
     try {
@@ -103,7 +129,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }
     }
   }, [token]);
 
-  // Load full notification list for dropdown
+  // Load full notification list for dropdown / sheet
   const loadNotifications = useCallback(async () => {
     if (!token) return;
     setIsLoading(true);
@@ -118,19 +144,52 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }
     }
   }, [token]);
 
-  // Polling (45s) and visibility/focus refresh
+  // Real-Time SSE Stream subscription
+  useEffect(() => {
+    if (!token || !user) return;
+
+    const disconnectStream = connectNotificationStream(token, {
+      onNotification: (liveNotification) => {
+        // Increment unread count immediately
+        setUnreadCount((prev) => prev + 1);
+
+        // Prepend to current notification list if loaded
+        setNotifications((prev) => [
+          liveNotification,
+          ...prev.filter((n) => n.id !== liveNotification.id),
+        ]);
+
+        // Trigger in-app toast alert (max 3 stacked)
+        setToasts((prev) => [
+          { id: `toast-${liveNotification.id}-${Date.now()}`, notification: liveNotification },
+          ...prev.slice(0, 2),
+        ]);
+      },
+      onReconnected: () => {
+        // Reconcile unread count upon successful reconnection
+        refreshUnreadCount();
+      },
+    });
+
+    return () => {
+      disconnectStream();
+    };
+  }, [token, user, refreshUnreadCount]);
+
+  // Polling fallback (45s) and visibility/focus refresh
   useEffect(() => {
     if (!token || !user) {
       setUnreadCount(0);
       setNotifications([]);
       setIsOpen(false);
+      setToasts([]);
       return;
     }
 
     // Initial load
     refreshUnreadCount();
 
-    // 45s interval polling while tab is visible
+    // 45s interval polling while tab is visible (autonomous fallback)
     const intervalId = setInterval(() => {
       if (document.visibilityState === 'visible') {
         refreshUnreadCount();
@@ -157,7 +216,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }
     };
   }, [token, user, refreshUnreadCount]);
 
-  // When dropdown opens, fetch notification list and refresh unread count
+  // When panel/sheet opens, fetch notification list and refresh unread count
   useEffect(() => {
     if (isOpen && token) {
       loadNotifications();
@@ -165,7 +224,18 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }
     }
   }, [isOpen, token, loadNotifications, refreshUnreadCount]);
 
-  // Click outside and Escape key listeners to close dropdown
+  // Lock background scroll on mobile when bottom sheet is open
+  useEffect(() => {
+    if (isOpen && typeof window !== 'undefined' && window.innerWidth < 640) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
+  // Click outside and Escape key listeners to close panel
   useEffect(() => {
     if (!isOpen) return;
 
@@ -227,163 +297,220 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ onNavigate }
 
     setIsOpen(false);
 
-    // Smart navigation if navigation handler provided
+    // Deep-linking navigation
     if (onNavigate) {
       const targetTab = getTargetTab(item.type, user?.role);
       onNavigate(targetTab);
+
+      // Deep link to booking if bookingId is present
+      if (item.bookingId && typeof window !== 'undefined') {
+        const baseHash = targetTab === 'provider-portal' ? '#/provider' : '#/bookings';
+        window.location.hash = `${baseHash}?bookingId=${item.bookingId}`;
+      }
     }
+  };
+
+  const handleDismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
   if (!user || !token) {
     return null;
   }
 
-  return (
-    <div className="relative inline-block text-left" ref={containerRef}>
-      {/* Bell Trigger Button */}
-      <button
-        type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
-        className="relative p-2 rounded-xl text-dwellio-teal hover:bg-dwellio-mint/20 transition-colors focus:outline-hidden focus:ring-2 focus:ring-dwellio-teal/20"
-        aria-label="Notifications"
-        aria-haspopup="true"
-        aria-expanded={isOpen}
-      >
-        <svg
-          className="w-5 h-5"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth="2"
-          aria-hidden="true"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-          />
-        </svg>
-
-        {/* Unread Count Badge in coral #D9653B */}
-        {unreadCount > 0 && (
-          <span
-            className="absolute -top-0.5 -right-0.5 min-w-[1.125rem] h-[1.125rem] px-1 bg-[#D9653B] text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs animate-in fade-in"
-            aria-label={`${unreadCount} unread notifications`}
-            data-testid="notification-unread-badge"
-          >
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </span>
-        )}
-      </button>
-
-      {/* Dropdown Menu */}
-      {isOpen && (
-        <div
-          className="absolute right-0 mt-2 w-80 sm:w-96 max-h-[30rem] bg-white rounded-2xl shadow-xl border border-dwellio-mint/60 overflow-hidden flex flex-col z-50 animate-in fade-in slide-in-from-top-2 duration-150"
-          role="region"
-          aria-label="Notification center"
-          data-testid="notification-dropdown"
-        >
-          {/* Header */}
-          <div className="px-4 py-3 border-b border-dwellio-mint/30 flex items-center justify-between bg-dwellio-ivory/50">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-dwellio-teal">Notifications</h3>
-              {unreadCount > 0 && (
-                <span className="text-[11px] font-semibold text-[#D9653B] bg-[#D9653B]/10 px-2 py-0.5 rounded-full">
-                  {unreadCount} new
-                </span>
-              )}
-            </div>
-
-            {unreadCount > 0 && (
-              <button
-                type="button"
-                onClick={handleMarkAllRead}
-                disabled={isMarkingAll}
-                className="text-[11px] font-semibold text-dwellio-teal/80 hover:text-dwellio-teal hover:underline disabled:opacity-50 transition"
-              >
-                {isMarkingAll ? 'Marking...' : 'Mark all read'}
-              </button>
-            )}
-          </div>
-
-          {/* Content Area */}
-          <div className="overflow-y-auto max-h-80 divide-y divide-dwellio-mint/20">
-            {isLoading ? (
-              <div className="p-8 text-center text-xs text-dwellio-teal/60 flex flex-col items-center gap-2">
-                <span className="inline-block w-5 h-5 border-2 border-dwellio-teal/30 border-t-dwellio-teal rounded-full animate-spin" />
-                <span>Loading notifications...</span>
-              </div>
-            ) : error ? (
-              <div className="p-6 text-center text-xs">
-                <p className="text-rose-600 mb-2">{error}</p>
-                <button
-                  type="button"
-                  onClick={loadNotifications}
-                  className="px-3 py-1 bg-dwellio-mint/30 text-dwellio-teal rounded-lg font-semibold hover:bg-dwellio-mint/50 transition"
-                >
-                  Retry
-                </button>
-              </div>
-            ) : notifications.length === 0 ? (
-              <div className="p-8 text-center text-xs text-dwellio-teal/60">
-                <p className="text-2xl mb-1.5">🔔</p>
-                <p className="font-semibold text-dwellio-teal">All caught up!</p>
-                <p className="mt-0.5">No notifications yet.</p>
-              </div>
-            ) : (
-              notifications.map((item) => {
-                const icon = getNotificationIcon(item.type);
-                const relativeTime = formatRelativeTime(item.createdAt);
-
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleItemClick(item)}
-                    className={`w-full text-left p-3.5 flex items-start gap-3 transition-colors focus:outline-hidden ${
-                      item.isRead
-                        ? 'bg-white hover:bg-dwellio-ivory/40 text-dwellio-teal/80'
-                        : 'bg-[#F6F4EC]/90 hover:bg-[#F6F4EC] text-dwellio-teal'
-                    }`}
-                    data-testid={`notification-item-${item.id}`}
-                  >
-                    {/* Icon */}
-                    <span className="text-xl flex-shrink-0 mt-0.5" aria-hidden="true">
-                      {icon}
-                    </span>
-
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className={`text-xs truncate ${item.isRead ? 'font-medium' : 'font-bold'}`}>
-                          {item.title}
-                        </span>
-                        {/* Unread indicator dot */}
-                        {!item.isRead && (
-                          <span
-                            className="w-2 h-2 rounded-full bg-[#D9653B] flex-shrink-0"
-                            title="Unread"
-                            aria-label="Unread"
-                          />
-                        )}
-                      </div>
-                      <p className="text-[11px] text-dwellio-teal/70 line-clamp-2 mt-0.5">
-                        {item.message}
-                      </p>
-                      {relativeTime && (
-                        <p className="text-[10px] text-dwellio-teal/50 mt-1">
-                          {relativeTime}
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
+  // Render notification content list (shared between desktop panel and mobile sheet)
+  const renderNotificationListContent = () => (
+    <>
+      {/* Header */}
+      <div className="px-4 py-3.5 border-b border-dwellio-mint/30 flex items-center justify-between bg-dwellio-ivory/50">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-bold text-dwellio-teal">Notifications</h3>
+          {unreadCount > 0 && (
+            <span className="text-[11px] font-semibold text-[#D9653B] bg-[#D9653B]/10 px-2 py-0.5 rounded-full">
+              {unreadCount} new
+            </span>
+          )}
         </div>
-      )}
-    </div>
+
+        <div className="flex items-center gap-3">
+          {unreadCount > 0 && (
+            <button
+              type="button"
+              onClick={handleMarkAllRead}
+              disabled={isMarkingAll}
+              className="text-[11px] font-semibold text-dwellio-teal/80 hover:text-dwellio-teal hover:underline disabled:opacity-50 transition"
+            >
+              {isMarkingAll ? 'Marking...' : 'Mark all read'}
+            </button>
+          )}
+
+          {/* Close button visible in mobile sheet */}
+          <button
+            type="button"
+            onClick={() => setIsOpen(false)}
+            className="sm:hidden text-dwellio-teal/60 hover:text-dwellio-teal p-1 rounded-lg"
+            aria-label="Close notifications"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {/* Content Area */}
+      <div className="overflow-y-auto max-h-[60vh] sm:max-h-80 divide-y divide-dwellio-mint/20">
+        {isLoading ? (
+          <div className="p-8 text-center text-xs text-dwellio-teal/60 flex flex-col items-center gap-2">
+            <span className="inline-block w-5 h-5 border-2 border-dwellio-teal/30 border-t-dwellio-teal rounded-full animate-spin" />
+            <span>Loading notifications...</span>
+          </div>
+        ) : error ? (
+          <div className="p-6 text-center text-xs">
+            <p className="text-rose-600 mb-2">{error}</p>
+            <button
+              type="button"
+              onClick={loadNotifications}
+              className="px-3 py-1 bg-dwellio-mint/30 text-dwellio-teal rounded-lg font-semibold hover:bg-dwellio-mint/50 transition"
+            >
+              Retry
+            </button>
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="p-8 text-center text-xs text-dwellio-teal/60">
+            <p className="text-2xl mb-1.5">🔔</p>
+            <p className="font-semibold text-dwellio-teal">All caught up!</p>
+            <p className="mt-0.5">No notifications yet.</p>
+          </div>
+        ) : (
+          notifications.map((item) => {
+            const icon = getNotificationIcon(item.type);
+            const relativeTime = formatRelativeTime(item.createdAt);
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleItemClick(item)}
+                className={`w-full text-left p-3.5 flex items-start gap-3 transition-colors focus:outline-hidden ${
+                  item.isRead
+                    ? 'bg-white hover:bg-dwellio-ivory/40 text-dwellio-teal/80'
+                    : 'bg-[#F6F4EC]/90 hover:bg-[#F6F4EC] text-dwellio-teal'
+                }`}
+                data-testid={`notification-item-${item.id}`}
+              >
+                {/* Icon */}
+                <span className="text-xl flex-shrink-0 mt-0.5" aria-hidden="true">
+                  {icon}
+                </span>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className={`text-xs truncate ${item.isRead ? 'font-medium' : 'font-bold'}`}>
+                      {item.title}
+                    </span>
+                    {!item.isRead && (
+                      <span
+                        className="w-2 h-2 rounded-full bg-[#D9653B] flex-shrink-0"
+                        title="Unread"
+                        aria-label="Unread"
+                      />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-dwellio-teal/70 line-clamp-2 mt-0.5">
+                    {item.message}
+                  </p>
+                  {relativeTime && (
+                    <p className="text-[10px] text-dwellio-teal/50 mt-1">
+                      {relativeTime}
+                    </p>
+                  )}
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* Floating In-App Toast Container */}
+      <NotificationToastContainer
+        toasts={toasts}
+        onDismiss={handleDismissToast}
+        onView={handleItemClick}
+      />
+
+      <div className="relative inline-block text-left" ref={containerRef}>
+        {/* Bell Trigger Button */}
+        <button
+          type="button"
+          onClick={() => setIsOpen((prev) => !prev)}
+          className="relative p-2 rounded-xl text-dwellio-teal hover:bg-dwellio-mint/20 transition-colors focus:outline-hidden focus:ring-2 focus:ring-dwellio-teal/20 min-h-[44px] min-w-[44px] flex items-center justify-center"
+          aria-label="Notifications"
+          aria-haspopup="true"
+          aria-expanded={isOpen}
+        >
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+            />
+          </svg>
+
+          {/* Unread Count Badge in coral #D9653B */}
+          {unreadCount > 0 && (
+            <span
+              className="absolute top-1 right-1 min-w-[1.125rem] h-[1.125rem] px-1 bg-[#D9653B] text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs animate-in fade-in"
+              aria-label={`${unreadCount} unread notifications`}
+              data-testid="notification-unread-badge"
+            >
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </button>
+
+        {/* Desktop Presentation: Floating Dropdown Panel (>= 640px) */}
+        {isOpen && !isMobile && (
+          <div
+            className="absolute right-0 mt-2 w-80 sm:w-96 max-h-[30rem] bg-white rounded-2xl shadow-xl border border-dwellio-mint/60 overflow-hidden flex-col z-50 animate-in fade-in slide-in-from-top-2 duration-150"
+            role="region"
+            aria-label="Notification center"
+            data-testid="notification-dropdown"
+          >
+            {renderNotificationListContent()}
+          </div>
+        )}
+
+        {/* Mobile Presentation: Slide-Up Bottom Sheet with Dimmed Backdrop (< 640px) */}
+        {isOpen && isMobile && (
+          <div
+            className="fixed inset-0 z-50 bg-dwellio-teal/60 backdrop-blur-xs flex flex-col justify-end animate-in fade-in duration-200"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Mobile notifications sheet"
+            data-testid="notification-bottom-sheet"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setIsOpen(false);
+            }}
+          >
+            <div className="bg-white rounded-t-3xl max-h-[85vh] flex flex-col shadow-2xl border-t border-dwellio-mint overflow-hidden animate-in slide-in-from-bottom duration-250">
+              {/* Sheet grab handle */}
+              <div className="w-10 h-1 bg-dwellio-mint/80 rounded-full mx-auto my-2" />
+              {renderNotificationListContent()}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 };
