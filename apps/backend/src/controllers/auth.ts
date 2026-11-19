@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { ApiResponse, AuthResponseData, SafeUser } from '@dwellio/shared';
+import { ApiResponse, AuthResponseData, SafeUser, UpdateProfilePayload } from '@dwellio/shared';
 import { User } from '../models/User';
 import {
   hashPassword,
@@ -191,6 +191,78 @@ export const getMe = (req: Request, res: Response): void => {
     message: 'User profile retrieved successfully.',
     data: {
       user: toSafeUser(req.user),
+    },
+  };
+
+  res.status(200).json(response);
+};
+
+const PHONE_REGEX = /^[+]?[0-9\s-]{7,15}$/;
+
+/**
+ * Customer Profile Update
+ * PATCH /api/auth/profile
+ */
+export const updateProfile = async (req: Request, res: Response): Promise<void> => {
+  if (!req.user) {
+    const response: ApiResponse = {
+      success: false,
+      message: 'User authentication required.',
+    };
+    res.status(401).json(response);
+    return;
+  }
+
+  const { name, phone }: UpdateProfilePayload = req.body;
+
+  if (name !== undefined) {
+    if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 100) {
+      const response: ApiResponse = {
+        success: false,
+        message: 'Name must be a valid string between 2 and 100 characters.',
+      };
+      res.status(400).json(response);
+      return;
+    }
+  }
+
+  if (phone !== undefined && phone !== null && phone !== '') {
+    if (typeof phone !== 'string' || !PHONE_REGEX.test(phone.trim())) {
+      const response: ApiResponse = {
+        success: false,
+        message: 'Please provide a valid phone number (7 to 15 digits).',
+      };
+      res.status(400).json(response);
+      return;
+    }
+  }
+
+  // Load user document
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    const response: ApiResponse = {
+      success: false,
+      message: 'User account not found.',
+    };
+    res.status(404).json(response);
+    return;
+  }
+
+  if (name !== undefined) {
+    user.name = name.trim();
+  }
+
+  if (phone !== undefined) {
+    user.phone = phone ? phone.trim() : undefined;
+  }
+
+  await user.save();
+
+  const response: ApiResponse<{ user: SafeUser }> = {
+    success: true,
+    message: 'Profile updated successfully.',
+    data: {
+      user: toSafeUser(user),
     },
   };
 

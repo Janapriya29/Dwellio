@@ -3,6 +3,7 @@ import {
   BookingData,
   CreateBookingPayload,
   CancelBookingPayload,
+  RescheduleBookingPayload,
   RejectBookingPayload,
   UpdateBookingStatusPayload,
 } from '@dwellio/shared';
@@ -97,6 +98,30 @@ export const cancelCustomerBooking = async (
   const json: ApiResponse<BookingData> = await res.json();
   if (!res.ok || !json.success) {
     throw new Error(json.message || `Failed to cancel booking: HTTP ${res.status}`);
+  }
+
+  return json.data!;
+};
+
+/**
+ * Customer: Reschedule an active booking
+ */
+export const rescheduleCustomerBooking = async (
+  id: string,
+  payload: RescheduleBookingPayload,
+  token: string
+): Promise<BookingData> => {
+  const res = await fetch(`${API_BASE_URL}/bookings/${id}/reschedule`, {
+    method: 'PATCH',
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+
+  const json: ApiResponse<BookingData> = await res.json();
+  if (!res.ok || !json.success) {
+    const error: any = new Error(json.message || `Failed to reschedule booking: HTTP ${res.status}`);
+    error.status = res.status;
+    throw error;
   }
 
   return json.data!;

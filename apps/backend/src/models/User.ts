@@ -6,6 +6,7 @@ export interface IUser extends Document {
   email: string;
   passwordHash: string;
   role: UserRole;
+  phone?: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -34,6 +35,15 @@ const userSchema = new Schema<IUser>(
     passwordHash: {
       type: String,
       required: [true, 'Password hash is required'],
+    },
+    phone: {
+      type: String,
+      trim: true,
+      match: [
+        /^[+]?[0-9\s-]{7,15}$/,
+        'Please provide a valid phone number',
+      ],
+      default: undefined,
     },
     role: {
       type: String,

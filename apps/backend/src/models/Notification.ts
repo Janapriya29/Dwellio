@@ -33,6 +33,7 @@ const notificationSchema = new Schema<INotification>(
         'BOOKING_IN_PROGRESS',
         'BOOKING_COMPLETED',
         'BOOKING_CANCELLED',
+        'BOOKING_RESCHEDULED',
         'REVIEW_RECEIVED',
         'REVIEW_REPLIED',
         'APPLICATION_APPROVED',

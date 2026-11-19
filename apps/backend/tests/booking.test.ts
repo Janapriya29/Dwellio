@@ -8,6 +8,7 @@ import { Category } from '../src/models/Category';
 import { Service } from '../src/models/Service';
 import { Booking } from '../src/models/Booking';
 import { SlotReservation } from '../src/models/SlotReservation';
+import { Notification } from '../src/models/Notification';
 import { connectTestDb, clearTestDb, disconnectTestDb } from './setup';
 import { generateToken } from '../src/utils/auth';
 
@@ -42,6 +43,7 @@ describe('Phase 6: Booking Lifecycle & Service Scheduling Tests', () => {
     await Service.syncIndexes();
     await Booking.syncIndexes();
     await SlotReservation.syncIndexes();
+    await Notification.syncIndexes();
   });
 
   afterAll(async () => {
@@ -1062,6 +1064,396 @@ describe('Phase 6: Booking Lifecycle & Service Scheduling Tests', () => {
       // Response must be 500 without crashing
       expect(res.status).toBe(500);
       expect(res.body.success).toBe(false);
+    });
+  });
+
+  describe('6. Customer Booking Rescheduling Engine (Phase 1, Milestone 3A)', () => {
+    let requestedBooking: any;
+    let acceptedBooking: any;
+    let baseTime: Date;
+
+    beforeEach(async () => {
+      // 3 days in the future
+      baseTime = new Date(Date.now() + 72 * 60 * 60 * 1000);
+      const start1 = new Date(baseTime);
+      start1.setHours(9, 0, 0, 0);
+      const end1 = new Date(baseTime);
+      end1.setHours(11, 0, 0, 0);
+
+      requestedBooking = await new Booking({
+        customerId: customerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start1,
+        scheduledEndTime: end1,
+        address: { street: '123 Palm Grove Lane', city: 'Metro City' },
+        status: 'requested',
+      }).save();
+
+      const start2 = new Date(baseTime);
+      start2.setHours(14, 0, 0, 0);
+      const end2 = new Date(baseTime);
+      end2.setHours(16, 0, 0, 0);
+
+      acceptedBooking = await new Booking({
+        customerId: customerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: start2,
+        scheduledEndTime: end2,
+        address: { street: '123 Palm Grove Lane', city: 'Metro City' },
+        status: 'accepted',
+      }).save();
+
+      // Seed slot reservations for acceptedBooking
+      const slots = [
+        new Date(start2.getTime()),
+        new Date(start2.getTime() + 15 * 60000),
+        new Date(start2.getTime() + 30 * 60000),
+        new Date(start2.getTime() + 45 * 60000),
+        new Date(start2.getTime() + 60 * 60000),
+        new Date(start2.getTime() + 75 * 60000),
+        new Date(start2.getTime() + 90 * 60000),
+        new Date(start2.getTime() + 105 * 60000),
+      ];
+      await SlotReservation.insertMany(
+        slots.map((s) => ({
+          providerId: approvedProfile._id,
+          slotTime: s,
+          bookingId: acceptedBooking._id,
+        }))
+      );
+    });
+
+    it('should successfully reschedule a requested booking without touching slot reservations', async () => {
+      const newStart = new Date(baseTime);
+      newStart.setDate(newStart.getDate() + 1);
+      newStart.setHours(10, 0, 0, 0);
+      const newEnd = new Date(newStart);
+      newEnd.setHours(12, 0, 0, 0);
+
+      const res = await request(app)
+        .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          newStartTime: newStart.toISOString(),
+          newEndTime: newEnd.toISOString(),
+          reason: 'Family emergency, need next day',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.status).toBe('requested');
+      expect(new Date(res.body.data.scheduledStartTime).toISOString()).toBe(newStart.toISOString());
+      expect(new Date(res.body.data.scheduledEndTime).toISOString()).toBe(newEnd.toISOString());
+
+      // Audit log entry
+      expect(res.body.data.statusHistory).toHaveLength(1);
+      expect(res.body.data.statusHistory[0].fromStatus).toBe('requested');
+      expect(res.body.data.statusHistory[0].toStatus).toBe('requested');
+      expect(res.body.data.statusHistory[0].reason).toContain('Family emergency');
+
+      // Provider in-app notification
+      const notif = await Notification.findOne({
+        recipientId: providerUser._id,
+        type: 'BOOKING_RESCHEDULED',
+      });
+      expect(notif).toBeTruthy();
+      expect(notif?.message).toContain('Family emergency');
+    });
+
+    it('should successfully reschedule an accepted booking and migrate slot reservations atomically', async () => {
+      const newStart = new Date(baseTime);
+      newStart.setDate(newStart.getDate() + 2);
+      newStart.setHours(11, 30, 0, 0);
+      const newEnd = new Date(newStart);
+      newEnd.setHours(13, 30, 0, 0);
+
+      const res = await request(app)
+        .patch(`/api/bookings/${acceptedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          newStartTime: newStart.toISOString(),
+          newEndTime: newEnd.toISOString(),
+          reason: 'Need morning window',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.status).toBe('accepted');
+      expect(new Date(res.body.data.scheduledStartTime).toISOString()).toBe(newStart.toISOString());
+
+      // Verify old slot reservations were removed
+      const oldSlotsCount = await SlotReservation.countDocuments({
+        bookingId: acceptedBooking._id,
+        slotTime: { $lt: newStart },
+      });
+      expect(oldSlotsCount).toBe(0);
+
+      // Verify new slot reservations were acquired
+      const newSlotsCount = await SlotReservation.countDocuments({
+        bookingId: acceptedBooking._id,
+        slotTime: { $gte: newStart, $lt: newEnd },
+      });
+      expect(newSlotsCount).toBe(8); // 2 hours = 8 15-min buckets
+    });
+
+    it('should reject unauthenticated request with 401', async () => {
+      const res = await request(app)
+        .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+        .send({ newStartTime: new Date().toISOString(), newEndTime: new Date().toISOString() });
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should prevent a customer from rescheduling another customer booking (403)', async () => {
+      const newStart = new Date(baseTime);
+      newStart.setHours(15, 0, 0, 0);
+      const newEnd = new Date(baseTime);
+      newEnd.setHours(17, 0, 0, 0);
+
+      const res = await request(app)
+        .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${secondCustomerToken}`)
+        .send({
+          newStartTime: newStart.toISOString(),
+          newEndTime: newEnd.toISOString(),
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.message).toMatch(/access denied/i);
+    });
+
+    it('should return 404 for non-existent booking', async () => {
+      const fakeId = new mongoose.Types.ObjectId();
+      const newStart = new Date(baseTime);
+      newStart.setHours(15, 0, 0, 0);
+      const newEnd = new Date(baseTime);
+      newEnd.setHours(17, 0, 0, 0);
+
+      const res = await request(app)
+        .patch(`/api/bookings/${fakeId}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          newStartTime: newStart.toISOString(),
+          newEndTime: newEnd.toISOString(),
+        });
+
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 400 for invalid booking ID format', async () => {
+      const res = await request(app)
+        .patch('/api/bookings/invalid-id/reschedule')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          newStartTime: new Date().toISOString(),
+          newEndTime: new Date().toISOString(),
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/invalid booking id/i);
+    });
+
+    it('should return 400 for missing or invalid timestamps', async () => {
+      // Missing end time
+      const res1 = await request(app)
+        .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ newStartTime: new Date().toISOString() });
+      expect(res1.status).toBe(400);
+
+      // Malformed date
+      const res2 = await request(app)
+        .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ newStartTime: 'not-a-date', newEndTime: 'also-not-a-date' });
+      expect(res2.status).toBe(400);
+    });
+
+    it('should return 400 when appointment start time is in the past', async () => {
+      const pastStart = new Date(Date.now() - 3600000);
+      const pastEnd = new Date(Date.now() + 3600000);
+
+      const res = await request(app)
+        .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          newStartTime: pastStart.toISOString(),
+          newEndTime: pastEnd.toISOString(),
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/future/i);
+    });
+
+    it('should return 400 when duration is invalid (end before start or duration out of bounds)', async () => {
+      const futureStart = new Date(baseTime);
+      futureStart.setHours(10, 0, 0, 0);
+
+      // End before start
+      const invalidEnd = new Date(futureStart.getTime() - 1000);
+      const res1 = await request(app)
+        .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          newStartTime: futureStart.toISOString(),
+          newEndTime: invalidEnd.toISOString(),
+        });
+      expect(res1.status).toBe(400);
+
+      // Less than 30 mins
+      const shortEnd = new Date(futureStart.getTime() + 15 * 60000);
+      const res2 = await request(app)
+        .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          newStartTime: futureStart.toISOString(),
+          newEndTime: shortEnd.toISOString(),
+        });
+      expect(res2.status).toBe(400);
+
+      // Greater than 8 hours
+      const longEnd = new Date(futureStart.getTime() + 9 * 3600000);
+      const res3 = await request(app)
+        .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          newStartTime: futureStart.toISOString(),
+          newEndTime: longEnd.toISOString(),
+        });
+      expect(res3.status).toBe(400);
+    });
+
+    it('should reject rescheduling for on_the_way and in_progress bookings with 400', async () => {
+      requestedBooking.status = 'on_the_way';
+      await requestedBooking.save();
+
+      const newStart = new Date(baseTime);
+      newStart.setDate(newStart.getDate() + 1);
+      const newEnd = new Date(newStart.getTime() + 2 * 3600000);
+
+      const res1 = await request(app)
+        .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ newStartTime: newStart.toISOString(), newEndTime: newEnd.toISOString() });
+      expect(res1.status).toBe(400);
+      expect(res1.body.message).toMatch(/on the way/i);
+
+      requestedBooking.status = 'in_progress';
+      await requestedBooking.save();
+
+      const res2 = await request(app)
+        .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ newStartTime: newStart.toISOString(), newEndTime: newEnd.toISOString() });
+      expect(res2.status).toBe(400);
+      expect(res2.body.message).toMatch(/in progress/i);
+    });
+
+    it('should reject rescheduling for terminal states (completed, cancelled, rejected) with 400', async () => {
+      const newStart = new Date(baseTime);
+      newStart.setDate(newStart.getDate() + 1);
+      const newEnd = new Date(newStart.getTime() + 2 * 3600000);
+
+      for (const st of ['completed', 'cancelled', 'rejected']) {
+        requestedBooking.status = st;
+        await requestedBooking.save();
+
+        const res = await request(app)
+          .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+          .set('Authorization', `Bearer ${customerToken}`)
+          .send({ newStartTime: newStart.toISOString(), newEndTime: newEnd.toISOString() });
+        expect(res.status).toBe(400);
+        expect(res.body.message).toMatch(/terminal state/i);
+      }
+    });
+
+    it('should return 409 conflict when provider has an overlapping active booking', async () => {
+      // Create another customer booking overlapping the desired reschedule window
+      const overlapStart = new Date(baseTime);
+      overlapStart.setDate(overlapStart.getDate() + 4);
+      overlapStart.setHours(9, 0, 0, 0);
+      const overlapEnd = new Date(overlapStart);
+      overlapEnd.setHours(11, 0, 0, 0);
+
+      await new Booking({
+        customerId: secondCustomerUser._id,
+        providerId: approvedProfile._id,
+        providerUserId: providerUser._id,
+        serviceId: activeService._id,
+        categoryId: testCategory._id,
+        scheduledStartTime: overlapStart,
+        scheduledEndTime: overlapEnd,
+        address: { street: '99 Conflict Way', city: 'Metro City' },
+        status: 'accepted',
+      }).save();
+
+      const res = await request(app)
+        .patch(`/api/bookings/${requestedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          newStartTime: overlapStart.toISOString(),
+          newEndTime: overlapEnd.toISOString(),
+        });
+
+      expect(res.status).toBe(409);
+      expect(res.body.message).toMatch(/overlapping appointment/i);
+    });
+
+    it('should not conflict with the booking own prior schedule when shifting appointment slightly', async () => {
+      // Shift acceptedBooking by 30 mins: 14:00-16:00 -> 14:30-16:30
+      const shiftedStart = new Date(acceptedBooking.scheduledStartTime.getTime() + 30 * 60000);
+      const shiftedEnd = new Date(acceptedBooking.scheduledEndTime.getTime() + 30 * 60000);
+
+      const res = await request(app)
+        .patch(`/api/bookings/${acceptedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          newStartTime: shiftedStart.toISOString(),
+          newEndTime: shiftedEnd.toISOString(),
+          reason: '30 minute shift',
+        });
+
+      expect(res.status).toBe(200);
+      expect(new Date(res.body.data.scheduledStartTime).toISOString()).toBe(shiftedStart.toISOString());
+    });
+
+    it('should preserve original slot reservations if acquiring new slots encounters an error or conflict', async () => {
+      const targetStart = new Date(baseTime);
+      targetStart.setDate(targetStart.getDate() + 5);
+      targetStart.setHours(10, 0, 0, 0);
+      const targetEnd = new Date(targetStart.getTime() + 2 * 3600000);
+
+      // Seed a foreign slot reservation directly into SlotReservation at that target time
+      await new SlotReservation({
+        providerId: approvedProfile._id,
+        slotTime: targetStart,
+        bookingId: new mongoose.Types.ObjectId(),
+      }).save();
+
+      const res = await request(app)
+        .patch(`/api/bookings/${acceptedBooking._id}/reschedule`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          newStartTime: targetStart.toISOString(),
+          newEndTime: targetEnd.toISOString(),
+        });
+
+      expect(res.status).toBe(409);
+
+      // Verify acceptedBooking original slots are STILL intact!
+      const originalSlotsCount = await SlotReservation.countDocuments({
+        bookingId: acceptedBooking._id,
+      });
+      expect(originalSlotsCount).toBe(8);
+
+      const refreshed = await Booking.findById(acceptedBooking._id);
+      expect(refreshed?.scheduledStartTime.toISOString()).toBe(acceptedBooking.scheduledStartTime.toISOString());
     });
   });
 });

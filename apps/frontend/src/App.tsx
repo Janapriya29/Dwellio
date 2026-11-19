@@ -8,6 +8,7 @@ import { ProviderPortalView } from './components/booking/ProviderPortalView';
 import { AdminDashboardLayout } from './components/admin/AdminDashboardLayout';
 import { NotificationBell } from './components/notification/NotificationBell';
 import { AuthModal, AuthModalMode } from './components/auth/AuthModal';
+import { CustomerProfileModal } from './components/account/CustomerProfileModal';
 
 export type AppTab = 'landing' | 'discover' | 'my-bookings' | 'provider-portal' | 'admin-dashboard';
 
@@ -56,6 +57,7 @@ const MainLayout: React.FC = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<AuthModalMode>('login');
   const [postLoginRedirect, setPostLoginRedirect] = useState<AppTab | undefined>(undefined);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   const setActiveTab = (tab: AppTab) => {
     setActiveTabState(tab);
@@ -119,13 +121,23 @@ const MainLayout: React.FC = () => {
             {/* Quick Mobile Auth / Status */}
             <div className="md:hidden flex items-center gap-2">
               {isAuthenticated ? (
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="px-2.5 py-1 rounded-xl text-xs font-bold text-dwellio-teal bg-dwellio-ivory border border-dwellio-mint"
-                >
-                  Sign Out
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileModalOpen(true)}
+                    className="px-2.5 py-1 rounded-xl text-xs font-bold text-dwellio-teal bg-dwellio-ivory border border-dwellio-mint"
+                    title="Account & Profile"
+                  >
+                    👤 Profile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="px-2.5 py-1 rounded-xl text-xs font-bold text-dwellio-teal bg-dwellio-ivory border border-dwellio-mint"
+                  >
+                    Sign Out
+                  </button>
+                </>
               ) : (
                 <button
                   type="button"
@@ -235,8 +247,16 @@ const MainLayout: React.FC = () => {
               <>
                 <NotificationBell onNavigate={(tab) => setActiveTab(tab)} />
 
-                <div className="hidden lg:flex flex-col text-right text-[11px] leading-tight">
-                  <span className="font-bold text-dwellio-teal">{user?.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="hidden lg:flex flex-col text-right text-[11px] leading-tight hover:opacity-80 transition cursor-pointer p-1.5 rounded-xl border border-transparent hover:border-dwellio-mint/60"
+                  title="View and edit account profile"
+                >
+                  <span className="font-bold text-dwellio-teal flex items-center gap-1 justify-end">
+                    <span>{user?.name}</span>
+                    <span className="text-[10px] text-dwellio-teal/60">⚙️</span>
+                  </span>
                   <span className="text-dwellio-teal/60 capitalize font-medium">
                     {user?.role === 'admin'
                       ? 'Administrator'
@@ -244,7 +264,7 @@ const MainLayout: React.FC = () => {
                       ? 'Service Provider'
                       : 'Customer'}
                   </span>
-                </div>
+                </button>
 
                 <button
                   type="button"
@@ -380,6 +400,12 @@ const MainLayout: React.FC = () => {
             setActiveTab('discover');
           }
         }}
+      />
+
+      {/* Customer Profile & Address Book Modal */}
+      <CustomerProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
       />
 
       {/* Comprehensive Brand Footer */}

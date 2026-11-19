@@ -115,4 +115,50 @@ describe('MyBookingsView Component', () => {
       expect(screen.getByText('No Bookings Found')).toBeInTheDocument();
     });
   });
+
+  it('renders Reschedule button for eligible requested/accepted bookings and opens RescheduleModal', async () => {
+    vi.mocked(bookingService.fetchCustomerBookings).mockResolvedValue(mockBookings);
+
+    render(
+      <AuthProvider>
+        <MyBookingsView onExploreServices={vi.fn()} />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /reschedule/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /reschedule/i }));
+
+    expect(screen.getByRole('heading', { name: /reschedule appointment/i })).toBeInTheDocument();
+  });
+
+  it('does not render Reschedule or Cancel buttons for completed or cancelled bookings', async () => {
+    const terminalBookings: BookingData[] = [
+      {
+        ...mockBookings[0],
+        id: 'book-completed',
+        status: 'completed',
+      },
+      {
+        ...mockBookings[0],
+        id: 'book-cancelled',
+        status: 'cancelled',
+      },
+    ];
+
+    vi.mocked(bookingService.fetchCustomerBookings).mockResolvedValue(terminalBookings);
+
+    render(
+      <AuthProvider>
+        <MyBookingsView onExploreServices={vi.fn()} />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /reschedule/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /cancel booking/i })).not.toBeInTheDocument();
+    });
+  });
 });

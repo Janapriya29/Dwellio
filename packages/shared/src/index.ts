@@ -34,9 +34,24 @@ export interface SafeUser {
   name: string;
   email: string;
   role: UserRole;
+  phone?: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface UpdateProfilePayload {
+  name?: string;
+  phone?: string;
+}
+
+export interface CustomerSavedAddress {
+  id: string;
+  label: string;
+  street: string;
+  city: string;
+  postalCode?: string;
+  isDefault?: boolean;
 }
 
 // Authentication payload returned on login/registration
@@ -256,6 +271,12 @@ export interface CancelBookingPayload {
   reason?: string;
 }
 
+export interface RescheduleBookingPayload {
+  newStartTime: string;
+  newEndTime: string;
+  reason?: string;
+}
+
 export interface RejectBookingPayload {
   reason?: string;
 }
@@ -410,6 +431,7 @@ export type NotificationType =
   | 'BOOKING_IN_PROGRESS'
   | 'BOOKING_COMPLETED'
   | 'BOOKING_CANCELLED'
+  | 'BOOKING_RESCHEDULED'
   | 'REVIEW_RECEIVED'
   | 'REVIEW_REPLIED'
   | 'APPLICATION_APPROVED'

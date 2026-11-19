@@ -1,11 +1,19 @@
 import { Request, Response } from 'express';
 import mongoose, { Types } from 'mongoose';
-import { ApiResponse, BookingData, CreateBookingPayload, CancelBookingPayload } from '@dwellio/shared';
+import { ApiResponse, BookingData, CreateBookingPayload, CancelBookingPayload, RescheduleBookingPayload } from '@dwellio/shared';
 import { Booking } from '../models/Booking';
 import { Service } from '../models/Service';
 import { ProviderProfile } from '../models/ProviderProfile';
 import { User } from '../models/User';
-import { formatBookingDto, findConflictingProviderBooking, releaseProviderSlots } from '../utils/booking';
+import { SlotReservation } from '../models/SlotReservation';
+import {
+  formatBookingDto,
+  findConflictingProviderBooking,
+  releaseProviderSlots,
+  migrateProviderSlots,
+  cleanupObsoleteSlots,
+  rollbackNewSlots,
+} from '../utils/booking';
 import { sendInAppNotification } from '../utils/notification';
 import { sendInternalError } from '../utils/security';
 
@@ -435,5 +443,243 @@ export const cancelCustomerBooking = async (req: Request, res: Response): Promis
     res.status(200).json(response);
   } catch (error: any) {
     sendInternalError(res, 'BookingCustomer.cancelCustomerBooking', error, 'Failed to cancel booking.');
+  }
+};
+
+/**
+ * Customer: Reschedule an existing booking
+ * PATCH /api/bookings/:id/reschedule
+ */
+export const rescheduleCustomerBooking = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ success: false, message: 'Authentication required' });
+      return;
+    }
+
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id || !Types.ObjectId.isValid(id)) {
+      res.status(400).json({ success: false, message: 'Invalid booking ID format.' });
+      return;
+    }
+
+    const { newStartTime, newEndTime, reason }: RescheduleBookingPayload = req.body;
+
+    if (!newStartTime || !newEndTime) {
+      res.status(400).json({
+        success: false,
+        message: 'Both newStartTime and newEndTime are required.',
+      });
+      return;
+    }
+
+    const start = new Date(newStartTime);
+    const end = new Date(newEndTime);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid date/time format for newStartTime or newEndTime.',
+      });
+      return;
+    }
+
+    if (start.getTime() <= Date.now()) {
+      res.status(400).json({
+        success: false,
+        message: 'New appointment start time must be in the future.',
+      });
+      return;
+    }
+
+    if (end.getTime() <= start.getTime()) {
+      res.status(400).json({
+        success: false,
+        message: 'New appointment end time must be after start time.',
+      });
+      return;
+    }
+
+    const durationMs = end.getTime() - start.getTime();
+    if (durationMs < MIN_DURATION_MS || durationMs > MAX_DURATION_MS) {
+      res.status(400).json({
+        success: false,
+        message: 'Appointment duration must be between 30 minutes and 8 hours.',
+      });
+      return;
+    }
+
+    // Load booking
+    const booking = await Booking.findById(id);
+    if (!booking) {
+      res.status(404).json({ success: false, message: 'Booking not found.' });
+      return;
+    }
+
+    // Ownership check
+    if (booking.customerId.toString() !== req.user._id.toString()) {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied: you cannot reschedule a booking belonging to another user.',
+      });
+      return;
+    }
+
+    // Status check
+    if (booking.status === 'on_the_way') {
+      res.status(400).json({
+        success: false,
+        message: 'Cannot reschedule booking once the service professional is on the way. Please contact support.',
+      });
+      return;
+    }
+
+    if (booking.status === 'in_progress') {
+      res.status(400).json({
+        success: false,
+        message: 'Cannot reschedule a booking while work is currently in progress.',
+      });
+      return;
+    }
+
+    if (['completed', 'cancelled', 'rejected'].includes(booking.status)) {
+      res.status(400).json({
+        success: false,
+        message: `Booking is already in a terminal state (${booking.status}).`,
+      });
+      return;
+    }
+
+    if (booking.status !== 'requested' && booking.status !== 'accepted') {
+      res.status(400).json({
+        success: false,
+        message: `Booking with status ${booking.status} cannot be rescheduled.`,
+      });
+      return;
+    }
+
+    // Check provider conflict using findConflictingProviderBooking with excludeBookingId
+    const conflict = await findConflictingProviderBooking(
+      booking.providerId,
+      start,
+      end,
+      booking._id
+    );
+    if (conflict) {
+      res.status(409).json({
+        success: false,
+        message: 'The service professional has an overlapping appointment during this time window. Please choose another slot.',
+      });
+      return;
+    }
+
+    // Also check if any other booking holds slot reservations in that window
+    const reservedByOther = await SlotReservation.findOne({
+      providerId: booking.providerId,
+      bookingId: { $ne: booking._id },
+      slotTime: { $gte: start, $lt: end },
+    });
+    if (reservedByOther) {
+      res.status(409).json({
+        success: false,
+        message: 'The requested appointment slot is already reserved by another customer. Please choose another slot.',
+      });
+      return;
+    }
+
+    const oldStart = booking.scheduledStartTime;
+    const oldEnd = booking.scheduledEndTime;
+    const isAccepted = booking.status === 'accepted';
+
+    // Concurrency-safe slot migration for accepted bookings
+    if (isAccepted) {
+      const migrationResult = await migrateProviderSlots(
+        booking.providerId,
+        oldStart,
+        oldEnd,
+        start,
+        end,
+        booking._id
+      );
+
+      if (!migrationResult.success) {
+        res.status(409).json({
+          success: false,
+          message: 'The requested appointment slot is no longer available. Please select another slot.',
+        });
+        return;
+      }
+    }
+
+    const rescheduleReason = reason?.trim() ? `Rescheduled by customer: ${reason.trim()}` : 'Rescheduled by customer';
+
+    // Atomic conditional update
+    const updated = await Booking.findOneAndUpdate(
+      {
+        _id: booking._id,
+        customerId: req.user._id,
+        status: booking.status,
+        scheduledStartTime: oldStart, // optimistic locking check
+      },
+      {
+        $set: {
+          scheduledStartTime: start,
+          scheduledEndTime: end,
+        },
+        $push: {
+          statusHistory: {
+            actorId: req.user._id,
+            actorRole: 'customer',
+            fromStatus: booking.status,
+            toStatus: booking.status,
+            timestamp: new Date(),
+            reason: rescheduleReason,
+          },
+        },
+      },
+      { returnDocument: 'after' }
+    )
+      .populate('customerId', 'name email')
+      .populate('providerId', 'displayName phone serviceArea skills')
+      .populate('serviceId', 'name slug')
+      .populate('categoryId', 'name slug');
+
+    if (!updated) {
+      // Rollback newly acquired slot buckets if booking update failed
+      if (isAccepted) {
+        await rollbackNewSlots(booking._id, oldStart, oldEnd, start, end);
+      }
+      res.status(409).json({
+        success: false,
+        message: 'Booking was concurrently modified or updated by another action. Please refresh and try again.',
+      });
+      return;
+    }
+
+    // Cleanup obsolete slots now that the booking schedule is safely committed
+    if (isAccepted) {
+      await cleanupObsoleteSlots(booking._id, oldStart, oldEnd, start, end);
+    }
+
+    // Notify provider (best effort)
+    const serviceName = (updated.serviceId as any)?.name || 'service';
+    const safeReason = reason?.trim() ? reason.trim().slice(0, 150) : 'Schedule adjustment';
+    await sendInAppNotification({
+      recipientId: booking.providerUserId,
+      type: 'BOOKING_RESCHEDULED',
+      title: 'Booking Rescheduled by Customer',
+      message: `Customer ${req.user.name} rescheduled the appointment for ${serviceName} to ${start.toLocaleString()}. Reason: ${safeReason}`,
+      bookingId: booking._id,
+      dedupKey: `booking:${booking._id}:rescheduled_${start.getTime()}`,
+    });
+
+    const response: ApiResponse<BookingData> = {
+      success: true,
+      message: 'Booking rescheduled successfully.',
+      data: formatBookingDto(updated),
+    };
+    res.status(200).json(response);
+  } catch (error: any) {
+    sendInternalError(res, 'BookingCustomer.rescheduleCustomerBooking', error, 'Failed to reschedule booking.');
   }
 };

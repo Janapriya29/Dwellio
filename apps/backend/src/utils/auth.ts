@@ -58,6 +58,7 @@ export const toSafeUser = (user: IUser): SafeUser => {
     name: user.name,
     email: user.email,
     role: user.role,
+    phone: user.phone || undefined,
     isActive: user.isActive,
     createdAt: user.createdAt ? user.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: user.updatedAt ? user.updatedAt.toISOString() : new Date().toISOString(),

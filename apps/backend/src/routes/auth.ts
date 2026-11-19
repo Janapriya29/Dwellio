@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, getMe } from '../controllers/auth';
+import { register, login, getMe, updateProfile } from '../controllers/auth';
 import { requireAuth } from '../middleware/auth';
 import { authRateLimiter } from '../middleware/rateLimiter';
 
@@ -11,3 +11,4 @@ authRouter.post('/auth/login', authRateLimiter, login);
 
 // Authenticated current-user profile
 authRouter.get('/auth/me', requireAuth, getMe);
+authRouter.patch('/auth/profile', requireAuth, updateProfile);

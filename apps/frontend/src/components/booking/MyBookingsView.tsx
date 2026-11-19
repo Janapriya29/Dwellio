@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { fetchCustomerBookings, cancelCustomerBooking } from '../../services/bookingService';
 import { fetchBookingReview } from '../../services/reviewService';
 import { ReviewModal } from './ReviewModal';
+import { RescheduleModal } from './RescheduleModal';
 
 interface MyBookingsViewProps {
   onExploreServices: () => void;
@@ -52,6 +53,8 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
 
   const [reviewingBooking, setReviewingBooking] = useState<BookingData | null>(null);
   const [reviewsByBookingId, setReviewsByBookingId] = useState<Record<string, ReviewData>>({});
+  const [reschedulingBooking, setReschedulingBooking] = useState<BookingData | null>(null);
+  const [rescheduleSuccessBanner, setRescheduleSuccessBanner] = useState<string | null>(null);
 
   const loadBookings = useCallback(async () => {
     if (!token) {
@@ -204,6 +207,23 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
             className="px-3 py-1 rounded bg-amber-600 text-white font-bold hover:bg-amber-700 transition"
           >
             Retry
+          </button>
+        </div>
+      )}
+
+      {/* Reschedule Success Banner */}
+      {rescheduleSuccessBanner && (
+        <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="text-emerald-600 font-bold text-sm">✅</span>
+            <span className="font-medium">{rescheduleSuccessBanner}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setRescheduleSuccessBanner(null)}
+            className="text-emerald-700 hover:text-emerald-900 font-bold p-1"
+          >
+            ✕
           </button>
         </div>
       )}
@@ -400,8 +420,16 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
                 )}
 
                 {/* Actions */}
-                {canCancel && (
-                  <div className="pt-4 mt-4 border-t border-dwellio-mint/20 flex justify-end">
+                {(canCancel) && (
+                  <div className="pt-4 mt-4 border-t border-dwellio-mint/20 flex justify-end gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setReschedulingBooking(booking)}
+                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-sky-800 bg-sky-50 border border-sky-200 hover:bg-sky-100 transition flex items-center gap-1.5"
+                    >
+                      <span>🔄</span>
+                      <span>Reschedule</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setCancellingBookingId(booking.id)}
@@ -415,6 +443,20 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
             );
           })}
         </div>
+      )}
+
+      {/* Reschedule Modal */}
+      {reschedulingBooking && (
+        <RescheduleModal
+          isOpen={!!reschedulingBooking}
+          booking={reschedulingBooking}
+          onClose={() => setReschedulingBooking(null)}
+          onRescheduleSuccess={(updatedBooking) => {
+            setBookings((prev) => prev.map((b) => (b.id === updatedBooking.id ? updatedBooking : b)));
+            setRescheduleSuccessBanner(`Booking ${updatedBooking.id.slice(-8).toUpperCase()} rescheduled successfully.`);
+            setReschedulingBooking(null);
+          }}
+        />
       )}
 
       {/* Review Modal */}

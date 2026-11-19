@@ -17,6 +17,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<SafeUser>;
   register: (name: string, email: string, password: string) => Promise<SafeUser>;
   logout: () => void;
+  updateUser: (updatedUser: SafeUser) => void;
   switchDemoRole: (role: 'customer' | 'karthik' | 'naveen' | 'admin') => Promise<void>;
 }
 
@@ -98,6 +99,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('dwellio_token');
   };
 
+  const updateUser = (updatedUser: SafeUser) => {
+    setUser(updatedUser);
+    try {
+      localStorage.setItem('dwellio_user', JSON.stringify(updatedUser));
+    } catch {
+      // ignore storage write errors
+    }
+  };
+
   const login = async (email: string, password: string): Promise<SafeUser> => {
     setIsLoading(true);
     try {
@@ -157,6 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         register,
         logout: clearAuth,
+        updateUser,
         switchDemoRole,
       }}
     >

@@ -186,3 +186,116 @@ export const releaseProviderSlots = async (
   const bId = new Types.ObjectId(bookingId.toString());
   await SlotReservation.deleteMany({ bookingId: bId });
 };
+
+export interface SlotMigrationResult {
+  success: boolean;
+  conflict?: boolean;
+  error?: string;
+}
+
+/**
+ * Concurrency-Safe Slot Migration for Rescheduling:
+ * Secures new slot buckets before releasing old buckets.
+ * Calculates delta between old and new reservation buckets.
+ * If acquisition fails, rolls back newly acquired buckets and keeps old reservations intact.
+ */
+export const migrateProviderSlots = async (
+  providerId: Types.ObjectId | string,
+  oldStartTime: Date,
+  oldEndTime: Date,
+  newStartTime: Date,
+  newEndTime: Date,
+  bookingId: Types.ObjectId | string
+): Promise<SlotMigrationResult> => {
+  const pId = new Types.ObjectId(providerId.toString());
+  const bId = new Types.ObjectId(bookingId.toString());
+
+  const oldSlots = generateSlotTimes(oldStartTime, oldEndTime);
+  const newSlots = generateSlotTimes(newStartTime, newEndTime);
+
+  if (newSlots.length === 0) {
+    return { success: false, error: 'Invalid scheduling window.' };
+  }
+
+  const oldSlotTimesSet = new Set(oldSlots.map((d) => d.getTime()));
+  const toAdd = newSlots.filter((d) => !oldSlotTimesSet.has(d.getTime()));
+
+  // Attempt to acquire newly required slot buckets
+  if (toAdd.length > 0) {
+    try {
+      const docs = toAdd.map((slotTime) => ({
+        providerId: pId,
+        slotTime,
+        bookingId: bId,
+      }));
+      await SlotReservation.insertMany(docs, { ordered: true });
+    } catch (err: any) {
+      const isDuplicate =
+        err.code === 11000 ||
+        err.name === 'MongoBulkWriteError' ||
+        (err.writeErrors && Array.isArray(err.writeErrors) && err.writeErrors.some((e: any) => e.code === 11000)) ||
+        (typeof err.message === 'string' && err.message.includes('E11000'));
+
+      // Rollback only the newly attempted buckets; existing old buckets remain completely safe
+      await SlotReservation.deleteMany({
+        bookingId: bId,
+        slotTime: { $in: toAdd },
+      });
+
+      if (isDuplicate) {
+        return { success: false, conflict: true };
+      }
+      throw err;
+    }
+  }
+
+  return { success: true };
+};
+
+/**
+ * Releases obsolete slot buckets no longer required after successful booking schedule update.
+ */
+export const cleanupObsoleteSlots = async (
+  bookingId: Types.ObjectId | string,
+  oldStartTime: Date,
+  oldEndTime: Date,
+  newStartTime: Date,
+  newEndTime: Date
+): Promise<void> => {
+  const bId = new Types.ObjectId(bookingId.toString());
+  const oldSlots = generateSlotTimes(oldStartTime, oldEndTime);
+  const newSlots = generateSlotTimes(newStartTime, newEndTime);
+  const newSlotTimesSet = new Set(newSlots.map((d) => d.getTime()));
+  const toRemove = oldSlots.filter((d) => !newSlotTimesSet.has(d.getTime()));
+
+  if (toRemove.length > 0) {
+    await SlotReservation.deleteMany({
+      bookingId: bId,
+      slotTime: { $in: toRemove },
+    });
+  }
+};
+
+/**
+ * Rolls back newly acquired slots if booking schedule update fails after acquiring them.
+ */
+export const rollbackNewSlots = async (
+  bookingId: Types.ObjectId | string,
+  oldStartTime: Date,
+  oldEndTime: Date,
+  newStartTime: Date,
+  newEndTime: Date
+): Promise<void> => {
+  const bId = new Types.ObjectId(bookingId.toString());
+  const oldSlots = generateSlotTimes(oldStartTime, oldEndTime);
+  const newSlots = generateSlotTimes(newStartTime, newEndTime);
+  const oldSlotTimesSet = new Set(oldSlots.map((d) => d.getTime()));
+  const toAdd = newSlots.filter((d) => !oldSlotTimesSet.has(d.getTime()));
+
+  if (toAdd.length > 0) {
+    await SlotReservation.deleteMany({
+      bookingId: bId,
+      slotTime: { $in: toAdd },
+    });
+  }
+};

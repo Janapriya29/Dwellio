@@ -1,4 +1,4 @@
-import { ApiResponse, AuthResponseData, SafeUser } from '@dwellio/shared';
+import { ApiResponse, AuthResponseData, SafeUser, UpdateProfilePayload } from '@dwellio/shared';
 import { API_BASE_URL } from '../config/api';
 
 export interface RegisterCustomerPayload {
@@ -67,6 +67,30 @@ export const fetchCurrentUser = async (token: string): Promise<SafeUser> => {
   const json: ApiResponse<{ user: SafeUser }> = await response.json();
   if (!response.ok || !json.success || !json.data) {
     throw new Error(json.message || 'Failed to fetch user session.');
+  }
+
+  return json.data.user;
+};
+
+/**
+ * Update authenticated user profile
+ */
+export const updateUserProfile = async (
+  payload: UpdateProfilePayload,
+  token: string
+): Promise<SafeUser> => {
+  const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const json: ApiResponse<{ user: SafeUser }> = await response.json();
+  if (!response.ok || !json.success || !json.data) {
+    throw new Error(json.message || 'Failed to update user profile.');
   }
 
   return json.data.user;

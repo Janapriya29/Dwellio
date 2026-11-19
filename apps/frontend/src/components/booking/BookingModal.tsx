@@ -6,10 +6,12 @@ import type {
   HouseRoom,
   StandardTimeSlotDefinition,
   ProviderSlotAvailability,
+  CustomerSavedAddress,
 } from '@dwellio/shared';
 import { useAuth } from '../../context/AuthContext';
 import { createBooking } from '../../services/bookingService';
 import { fetchProviderAvailability } from '../../services/catalogService';
+import { getSavedAddresses, saveAddress } from '../../services/addressBookService';
 
 export const STANDARD_TIME_SLOTS: StandardTimeSlotDefinition[] = [
   { slotIndex: 0, label: '09:00 AM – 11:00 AM', startHour: 9, startMin: 0, endHour: 11, endMin: 0 },
@@ -55,7 +57,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   onBookingSuccess,
   onNavigateToBookings,
 }) => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
   // Tomorrow's date formatted as YYYY-MM-DD
   const tomorrowStr = (() => {
@@ -70,7 +72,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [selectedDate, setSelectedDate] = useState<string>(tomorrowStr);
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number>(0);
 
-  // Address state initialized from localStorage (or empty with clean placeholders)
+  // Address book state
+  const [savedAddresses, setSavedAddresses] = useState<CustomerSavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>('new');
+  const [saveToAddressBook, setSaveToAddressBook] = useState<boolean>(true);
+  const [newAddressLabel, setNewAddressLabel] = useState<string>('Home');
+
+  // Address form fields
   const initialAddress = getSavedAddress();
   const [street, setStreet] = useState<string>(initialAddress.street);
   const [city, setCity] = useState<string>(initialAddress.city);
@@ -84,6 +92,29 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<BookingData | null>(null);
+
+  // Load saved addresses on modal open
+  useEffect(() => {
+    if (isOpen) {
+      const list = getSavedAddresses(user?.id);
+      setSavedAddresses(list);
+      if (list.length > 0) {
+        const defaultAddr = list.find((a) => a.isDefault) || list[0];
+        setSelectedAddressId(defaultAddr.id);
+        setStreet(defaultAddr.street);
+        setCity(defaultAddr.city);
+        setPostalCode(defaultAddr.postalCode || '');
+        setSaveToAddressBook(false);
+      } else {
+        setSelectedAddressId('new');
+        const legacy = getSavedAddress();
+        setStreet(legacy.street);
+        setCity(legacy.city);
+        setPostalCode(legacy.postalCode);
+        setSaveToAddressBook(true);
+      }
+    }
+  }, [isOpen, user?.id]);
 
   // Fetch real-time provider availability whenever date or provider changes
   useEffect(() => {
@@ -181,7 +212,18 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         token || ''
       );
 
-      // Save customer address to localStorage for frictionless future bookings
+      // Save customer address to address book if requested
+      if (saveToAddressBook && (selectedAddressId === 'new' || savedAddresses.length === 0)) {
+        saveAddress(user?.id, {
+          label: newAddressLabel,
+          street: street.trim(),
+          city: city.trim(),
+          postalCode: postalCode.trim() || undefined,
+          isDefault: savedAddresses.length === 0,
+        });
+      }
+
+      // Preserve legacy single address key for backward compatibility
       try {
         localStorage.setItem(
           STORAGE_KEY_ADDRESS,
@@ -398,49 +440,147 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
             </div>
 
-            {/* Address */}
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="col-span-2">
-                <label htmlFor="street-input" className="block text-xs font-bold text-dwellio-teal uppercase tracking-wider mb-1">
-                  Street Address *
-                </label>
-                <input
-                  id="street-input"
-                  type="text"
-                  value={street}
-                  onChange={(e) => setStreet(e.target.value)}
-                  required
-                  placeholder="Door/Flat No., Street Name, Locality"
-                  className="w-full rounded-xl border border-dwellio-mint/80 bg-white px-3.5 py-2 text-xs text-dwellio-teal focus:outline-none focus:ring-2 focus:ring-dwellio-teal"
-                />
+            {/* Service Location / Address Book Selector */}
+            <div className="mb-4">
+              {savedAddresses.length > 0 && (
+                <div className="mb-2">
+                  <span className="block text-xs font-bold text-dwellio-teal uppercase tracking-wider mb-1.5">
+                    Select Saved Address
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {savedAddresses.map((addr) => {
+                      const isSel = selectedAddressId === addr.id;
+                      return (
+                        <button
+                          key={addr.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedAddressId(addr.id);
+                            setStreet(addr.street);
+                            setCity(addr.city);
+                            setPostalCode(addr.postalCode || '');
+                            setSaveToAddressBook(false);
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition text-left flex items-center gap-1.5 ${
+                            isSel
+                              ? 'bg-dwellio-teal text-white border-dwellio-teal shadow-xs'
+                              : 'bg-dwellio-ivory text-dwellio-teal border-dwellio-mint/60 hover:bg-white'
+                          }`}
+                        >
+                          <span>{addr.label === 'Home' ? '🏠' : addr.label === 'Office' ? '🏢' : '📍'}</span>
+                          <span>{addr.label}</span>
+                          {addr.isDefault && (
+                            <span className={`text-[10px] px-1 rounded ${isSel ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'}`}>
+                              Default
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedAddressId('new');
+                        setStreet('');
+                        setCity('');
+                        setPostalCode('');
+                        setSaveToAddressBook(true);
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition flex items-center gap-1 ${
+                        selectedAddressId === 'new'
+                          ? 'bg-dwellio-teal text-white border-dwellio-teal shadow-xs'
+                          : 'bg-white text-dwellio-teal/80 border-dashed border-dwellio-mint hover:bg-dwellio-ivory'
+                      }`}
+                    >
+                      <span>＋</span>
+                      <span>Other Address</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Address Form Inputs */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label htmlFor="street-input" className="block text-xs font-bold text-dwellio-teal uppercase tracking-wider mb-1">
+                    Street Address *
+                  </label>
+                  <input
+                    id="street-input"
+                    type="text"
+                    value={street}
+                    onChange={(e) => setStreet(e.target.value)}
+                    required
+                    placeholder="Door/Flat No., Street Name, Locality"
+                    className="w-full rounded-xl border border-dwellio-mint/80 bg-white px-3.5 py-2 text-xs text-dwellio-teal focus:outline-none focus:ring-2 focus:ring-dwellio-teal"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="city-input" className="block text-xs font-bold text-dwellio-teal uppercase tracking-wider mb-1">
+                    City *
+                  </label>
+                  <input
+                    id="city-input"
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    required
+                    placeholder="City"
+                    className="w-full rounded-xl border border-dwellio-mint/80 bg-white px-3.5 py-2 text-xs text-dwellio-teal focus:outline-none focus:ring-2 focus:ring-dwellio-teal"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="postal-input" className="block text-xs font-bold text-dwellio-teal uppercase tracking-wider mb-1">
+                    Postal Code
+                  </label>
+                  <input
+                    id="postal-input"
+                    type="text"
+                    value={postalCode}
+                    onChange={(e) => setPostalCode(e.target.value)}
+                    placeholder="PIN / Postal Code"
+                    className="w-full rounded-xl border border-dwellio-mint/80 bg-white px-3.5 py-2 text-xs text-dwellio-teal focus:outline-none focus:ring-2 focus:ring-dwellio-teal"
+                  />
+                </div>
               </div>
-              <div>
-                <label htmlFor="city-input" className="block text-xs font-bold text-dwellio-teal uppercase tracking-wider mb-1">
-                  City *
-                </label>
-                <input
-                  id="city-input"
-                  type="text"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  required
-                  placeholder="City"
-                  className="w-full rounded-xl border border-dwellio-mint/80 bg-white px-3.5 py-2 text-xs text-dwellio-teal focus:outline-none focus:ring-2 focus:ring-dwellio-teal"
-                />
-              </div>
-              <div>
-                <label htmlFor="postal-input" className="block text-xs font-bold text-dwellio-teal uppercase tracking-wider mb-1">
-                  Postal Code
-                </label>
-                <input
-                  id="postal-input"
-                  type="text"
-                  value={postalCode}
-                  onChange={(e) => setPostalCode(e.target.value)}
-                  placeholder="PIN / Postal Code"
-                  className="w-full rounded-xl border border-dwellio-mint/80 bg-white px-3.5 py-2 text-xs text-dwellio-teal focus:outline-none focus:ring-2 focus:ring-dwellio-teal"
-                />
-              </div>
+
+              {/* Save to address book option if entering a new / custom address */}
+              {(selectedAddressId === 'new' || savedAddresses.length === 0) && (
+                <div className="mt-2.5 p-2.5 rounded-xl bg-dwellio-ivory/50 border border-dwellio-mint/40 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="save-to-address-book"
+                      type="checkbox"
+                      checked={saveToAddressBook}
+                      onChange={(e) => setSaveToAddressBook(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded text-dwellio-teal border-dwellio-mint focus:ring-dwellio-teal"
+                    />
+                    <label htmlFor="save-to-address-book" className="text-xs text-dwellio-teal font-medium cursor-pointer">
+                      Save to my address book for future bookings
+                    </label>
+                  </div>
+
+                  {saveToAddressBook && (
+                    <div className="flex items-center gap-1.5 pl-5">
+                      <span className="text-[11px] text-dwellio-teal/60 font-medium">Label:</span>
+                      {['Home', 'Office', 'Apartment', 'Other'].map((lbl) => (
+                        <button
+                          key={lbl}
+                          type="button"
+                          onClick={() => setNewAddressLabel(lbl)}
+                          className={`px-2 py-0.5 rounded text-[11px] font-semibold border transition ${
+                            newAddressLabel === lbl
+                              ? 'bg-dwellio-teal text-white border-dwellio-teal'
+                              : 'bg-white text-dwellio-teal/70 border-dwellio-mint/60 hover:bg-dwellio-ivory'
+                          }`}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Customer Notes */}

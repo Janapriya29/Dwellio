@@ -309,4 +309,48 @@ describe('BookingModal Component', () => {
     expect(callArgs.scheduledStartTime).toBe(expectedLocalStart);
     expect(callArgs.scheduledEndTime).toBe(expectedLocalEnd);
   });
+
+  it('renders multi-address selection pills when saved addresses exist and switches fields on selection', async () => {
+    // Seed 2 addresses in address book for test user
+    const testAddresses = [
+      { id: 'addr-home', label: 'Home', street: '10 Marina View', city: 'Chennai', postalCode: '600004', isDefault: true },
+      { id: 'addr-office', label: 'Office', street: '200 OMR IT Expressway', city: 'Chennai', postalCode: '600096', isDefault: false },
+    ];
+    localStorage.setItem('dwellio_customer_saved_addresses_demo-customer-id', JSON.stringify(testAddresses));
+
+    render(
+      <AuthProvider>
+        <BookingModal
+          isOpen={true}
+          provider={mockProvider}
+          services={mockServices}
+          selectedRoom="roof"
+          onClose={vi.fn()}
+        />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /home/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /office/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /other address/i })).toBeInTheDocument();
+    });
+
+    // Default 'Home' address should initially be pre-filled
+    expect(screen.getByLabelText(/street address/i)).toHaveValue('10 Marina View');
+    expect(screen.getByLabelText(/city/i)).toHaveValue('Chennai');
+    expect(screen.getByLabelText(/postal code/i)).toHaveValue('600004');
+
+    // Click 'Office' pill
+    fireEvent.click(screen.getByRole('button', { name: /office/i }));
+
+    expect(screen.getByLabelText(/street address/i)).toHaveValue('200 OMR IT Expressway');
+    expect(screen.getByLabelText(/postal code/i)).toHaveValue('600096');
+
+    // Click 'Other Address' pill
+    fireEvent.click(screen.getByRole('button', { name: /other address/i }));
+
+    expect(screen.getByLabelText(/street address/i)).toHaveValue('');
+    expect(screen.getByLabelText(/save to my address book/i)).toBeInTheDocument();
+  });
 });

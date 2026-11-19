@@ -6,6 +6,7 @@ import {
   getCustomerBookings,
   getCustomerBookingById,
   cancelCustomerBooking,
+  rescheduleCustomerBooking,
 } from '../controllers/bookingCustomer';
 import {
   getProviderBookings,
@@ -24,6 +25,7 @@ bookingRouter.post('/bookings', requireAuth, bookingCreationRateLimiter, createB
 bookingRouter.get('/bookings', requireAuth, getCustomerBookings);
 bookingRouter.get('/bookings/:id', requireAuth, getCustomerBookingById);
 bookingRouter.patch('/bookings/:id/cancel', requireAuth, cancelCustomerBooking);
+bookingRouter.patch('/bookings/:id/reschedule', requireAuth, rescheduleCustomerBooking);
 
 // ----------------------------------------------------
 // Service Provider Booking Endpoints

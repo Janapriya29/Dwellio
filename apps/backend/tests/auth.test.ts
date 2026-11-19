@@ -372,4 +372,103 @@ describe('Phase 3: Authentication and Role-Based Authorization Tests', () => {
       expect(provRes.status).toBe(403);
     });
   });
+
+  describe('5. Customer Profile Update Endpoint (PATCH /api/auth/profile)', () => {
+    let customerUser: any;
+    let customerToken: string;
+
+    beforeEach(async () => {
+      customerUser = await new User({
+        name: 'Initial Name',
+        email: 'profile.test@example.com',
+        passwordHash: 'dummy_hash',
+        role: 'customer',
+      }).save();
+      customerToken = generateToken({ userId: customerUser._id.toString(), role: 'customer' });
+    });
+
+    it('should allow authenticated customer to update display name and phone number', async () => {
+      const res = await request(app)
+        .patch('/api/auth/profile')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          name: 'Updated Pooja Sharma',
+          phone: '+91 9840122334',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.user.name).toBe('Updated Pooja Sharma');
+      expect(res.body.data.user.phone).toBe('+91 9840122334');
+      expect(res.body.data.user.email).toBe('profile.test@example.com');
+      expect(res.body.data.user.role).toBe('customer');
+
+      // Verify persistence in DB and GET /api/auth/me
+      const meRes = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${customerToken}`);
+
+      expect(meRes.status).toBe(200);
+      expect(meRes.body.data.user.name).toBe('Updated Pooja Sharma');
+      expect(meRes.body.data.user.phone).toBe('+91 9840122334');
+      expect(JSON.stringify(meRes.body)).not.toContain('passwordHash');
+    });
+
+    it('should reject unauthenticated profile update with 401', async () => {
+      const res = await request(app)
+        .patch('/api/auth/profile')
+        .send({ name: 'Hacker Name' });
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should reject invalid display names with 400', async () => {
+      // Too short
+      const res1 = await request(app)
+        .patch('/api/auth/profile')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ name: 'A' });
+      expect(res1.status).toBe(400);
+      expect(res1.body.message).toMatch(/between 2 and 100/i);
+
+      // Empty string
+      const res2 = await request(app)
+        .patch('/api/auth/profile')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ name: '   ' });
+      expect(res2.status).toBe(400);
+    });
+
+    it('should reject invalid phone format with 400', async () => {
+      const res = await request(app)
+        .patch('/api/auth/profile')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ phone: 'invalid-phone-abc' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/valid phone number/i);
+    });
+
+    it('should strictly ignore attempts to self-escalate role or change email via profile update', async () => {
+      const res = await request(app)
+        .patch('/api/auth/profile')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          name: 'Privilege Seeker',
+          role: 'admin',
+          email: 'hacked@admin.com',
+          isActive: false,
+          passwordHash: 'hacked_hash',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.user.role).toBe('customer'); // Role remains customer!
+      expect(res.body.data.user.email).toBe('profile.test@example.com'); // Email unchanged!
+
+      const dbUser = await User.findById(customerUser._id);
+      expect(dbUser?.role).toBe('customer');
+      expect(dbUser?.email).toBe('profile.test@example.com');
+      expect(dbUser?.passwordHash).toBe('dummy_hash');
+    });
+  });
 });
