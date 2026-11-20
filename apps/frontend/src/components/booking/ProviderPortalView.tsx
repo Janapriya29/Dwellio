@@ -5,12 +5,30 @@ import {
   fetchProviderApplicationStatus,
   submitProviderApplication,
 } from '../../services/providerService';
+import { ProviderDashboardOverview } from '../provider/ProviderDashboardOverview';
 import { ProviderBookingsView } from './ProviderBookingsView';
+import { ProviderScheduleView } from '../provider/ProviderScheduleView';
+import { ProviderReviewsHub } from '../provider/ProviderReviewsHub';
+import { ProviderProfileModal } from '../provider/ProviderProfileModal';
 
 interface ProviderPortalViewProps {
   onOpenLogin: () => void;
   onOpenApply: () => void;
 }
+
+type ProviderWorkspaceTab = 'dashboard' | 'bookings' | 'schedule' | 'reviews' | 'profile';
+
+const getInitialTab = (): ProviderWorkspaceTab => {
+  if (typeof window !== 'undefined') {
+    const hash = window.location.hash;
+    if (hash.includes('bookingId=')) return 'bookings';
+    if (hash.includes('tab=schedule')) return 'schedule';
+    if (hash.includes('tab=reviews')) return 'reviews';
+    if (hash.includes('tab=bookings')) return 'bookings';
+    if (hash.includes('tab=profile')) return 'profile';
+  }
+  return 'dashboard';
+};
 
 const AVAILABLE_SKILLS = [
   'Waterproofing',
@@ -38,6 +56,18 @@ export const ProviderPortalView: React.FC<ProviderPortalViewProps> = ({
   const [application, setApplication] = useState<ProviderProfileData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ProviderWorkspaceTab>(getInitialTab);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      if (window.location.hash.includes('bookingId=')) {
+        setActiveTab('bookings');
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   // Re-submission form fields
   const [displayName, setDisplayName] = useState('');
@@ -388,5 +418,140 @@ export const ProviderPortalView: React.FC<ProviderPortalViewProps> = ({
   }
 
   // 6. CASE: APPROVED PROVIDER (OR ROLE IS PROVIDER)
-  return <ProviderBookingsView />;
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-8">
+      {/* Workspace Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 border-b border-dwellio-mint/40 pb-5">
+        <div>
+          <span className="text-[10px] font-extrabold uppercase tracking-widest text-dwellio-teal/60">
+            Professional Workspace
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black text-dwellio-teal tracking-tight">
+            Provider Partner Portal
+          </h1>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsProfileModalOpen(true)}
+            className="px-4 py-2 rounded-xl border border-dwellio-teal/40 bg-white text-dwellio-teal font-bold text-xs hover:bg-dwellio-ivory transition shadow-xs flex items-center gap-1.5"
+          >
+            <span>⚙️</span>
+            <span>Business Profile</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 5-Tab Navigation Pill Bar */}
+      <div className="flex flex-wrap items-center gap-2 mb-8 bg-dwellio-ivory/60 p-1.5 rounded-2xl border border-dwellio-mint/50">
+        <button
+          type="button"
+          onClick={() => setActiveTab('dashboard')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+            activeTab === 'dashboard'
+              ? 'bg-dwellio-teal text-white shadow-xs'
+              : 'text-dwellio-teal hover:bg-white/80'
+          }`}
+        >
+          <span>📊</span>
+          <span>Dashboard</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('bookings')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+            activeTab === 'bookings'
+              ? 'bg-dwellio-teal text-white shadow-xs'
+              : 'text-dwellio-teal hover:bg-white/80'
+          }`}
+        >
+          <span>📋</span>
+          <span>Bookings &amp; Jobs</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('schedule')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+            activeTab === 'schedule'
+              ? 'bg-dwellio-teal text-white shadow-xs'
+              : 'text-dwellio-teal hover:bg-white/80'
+          }`}
+        >
+          <span>🗓️</span>
+          <span>Schedule &amp; Availability</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('reviews')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+            activeTab === 'reviews'
+              ? 'bg-dwellio-teal text-white shadow-xs'
+              : 'text-dwellio-teal hover:bg-white/80'
+          }`}
+        >
+          <span>⭐</span>
+          <span>Reviews Hub</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setIsProfileModalOpen(true)}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+            activeTab === 'profile'
+              ? 'bg-dwellio-teal text-white shadow-xs'
+              : 'text-dwellio-teal hover:bg-white/80'
+          }`}
+        >
+          <span>⚙️</span>
+          <span>Settings</span>
+        </button>
+      </div>
+
+      {/* Tab Contents */}
+      {activeTab === 'dashboard' && (
+        <ProviderDashboardOverview
+          onNavigateTab={(tab) => {
+            if (tab === 'profile') setIsProfileModalOpen(true);
+            else setActiveTab(tab);
+          }}
+        />
+      )}
+
+      {activeTab === 'bookings' && <ProviderBookingsView />}
+
+      {activeTab === 'schedule' && <ProviderScheduleView />}
+
+      {activeTab === 'reviews' && <ProviderReviewsHub />}
+
+      {activeTab === 'profile' && (
+        <div className="bg-white p-8 rounded-3xl border border-dwellio-mint/60 shadow-xs text-center space-y-4">
+          <span className="text-4xl block">⚙️</span>
+          <h3 className="text-xl font-bold text-dwellio-teal">Provider Business Profile</h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            Manage your trade credentials, business bio, contact address, service coverage radius, and verified skills.
+          </p>
+          <button
+            type="button"
+            onClick={() => setIsProfileModalOpen(true)}
+            className="px-6 py-2.5 rounded-xl bg-dwellio-teal text-white font-bold text-xs hover:opacity-95 shadow transition"
+          >
+            Open Profile Editor
+          </button>
+        </div>
+      )}
+
+      {/* Business Profile Modal */}
+      <ProviderProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        onProfileUpdated={() => {
+          loadStatus();
+        }}
+      />
+    </div>
+  );
 };

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { ProviderPortalView } from '../ProviderPortalView';
 import { AuthProvider } from '../../../context/AuthContext';
 import * as providerService from '../../../services/providerService';
@@ -9,6 +9,19 @@ import { ProviderProfileData } from '@dwellio/shared';
 vi.mock('../../../services/providerService', () => ({
   fetchProviderApplicationStatus: vi.fn(),
   submitProviderApplication: vi.fn(),
+  fetchProviderDashboardStats: vi.fn().mockResolvedValue({
+    totalCompletedJobs: 5,
+    totalBookings: 8,
+    pendingRequests: 1,
+    activeJobs: 2,
+    acceptanceRate: 90,
+    completionRate: 95,
+    ratingAverage: 4.8,
+    reviewCount: 6,
+    totalRecordedEarnings: 15000,
+    currentMonthEarnings: 8000,
+    todaysJobs: [],
+  }),
 }));
 
 vi.mock('../../../services/bookingService', () => ({
@@ -129,7 +142,7 @@ describe('ProviderPortalView Component', () => {
     });
   });
 
-  it('renders ProviderBookingsView when provider application is approved', async () => {
+  it('renders provider partner portal workspace with tabs and switches to ProviderBookingsView', async () => {
     localStorage.setItem(
       'dwellio_user',
       JSON.stringify({
@@ -153,6 +166,17 @@ describe('ProviderPortalView Component', () => {
         <ProviderPortalView onOpenLogin={mockOpenLogin} onOpenApply={mockOpenApply} />
       </AuthProvider>
     );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Provider Partner Portal/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Bookings & Jobs/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Schedule & Availability/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Reviews Hub/i })).toBeInTheDocument();
+    });
+
+    // Switch to Bookings & Jobs tab
+    const bookingsTab = screen.getAllByRole('button', { name: /Bookings & Jobs/i })[0];
+    fireEvent.click(bookingsTab);
 
     await waitFor(() => {
       expect(screen.getByText(/provider booking management/i)).toBeInTheDocument();

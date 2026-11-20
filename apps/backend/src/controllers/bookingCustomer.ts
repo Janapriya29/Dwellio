@@ -195,6 +195,8 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
       },
       customerNotes: customerNotes?.trim(),
       status: 'requested',
+      priceSnapshot: (service as any).basePrice || (service as any).price || 499,
+      paymentStatus: 'unpaid',
       statusHistory: [
         {
           actorId: req.user._id,

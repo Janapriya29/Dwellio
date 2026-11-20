@@ -9,6 +9,7 @@ import { AdminDashboardLayout } from './components/admin/AdminDashboardLayout';
 import { NotificationBell } from './components/notification/NotificationBell';
 import { AuthModal, AuthModalMode } from './components/auth/AuthModal';
 import { CustomerProfileModal } from './components/account/CustomerProfileModal';
+import { ProviderProfileModal } from './components/provider/ProviderProfileModal';
 import { MobileBottomNav } from './components/navigation/MobileBottomNav';
 
 export type AppTab = 'landing' | 'discover' | 'my-bookings' | 'provider-portal' | 'admin-dashboard';
@@ -389,10 +390,20 @@ const MainLayout: React.FC = () => {
       />
 
       {/* Customer Profile & Address Book Modal */}
-      <CustomerProfileModal
-        isOpen={isProfileModalOpen}
-        onClose={() => setIsProfileModalOpen(false)}
-      />
+      {user?.role !== 'provider' && (
+        <CustomerProfileModal
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+        />
+      )}
+
+      {/* Provider Business Profile Modal (Approved Provider) */}
+      {user?.role === 'provider' && (
+        <ProviderProfileModal
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+        />
+      )}
 
       {/* Comprehensive Brand Footer */}
       <footer className="border-t border-dwellio-mint/30 bg-white/70 py-10 text-xs text-dwellio-teal/70 mt-16">

@@ -6,6 +6,7 @@ export interface IService extends Document {
   slug: string;
   description?: string;
   icon?: string;
+  basePrice: number;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -41,6 +42,11 @@ const serviceSchema = new Schema<IService>(
     icon: {
       type: String,
       trim: true,
+    },
+    basePrice: {
+      type: Number,
+      default: 499,
+      min: [0, 'Base price cannot be negative'],
     },
     isActive: {
       type: Boolean,

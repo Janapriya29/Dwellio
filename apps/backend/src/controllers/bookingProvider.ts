@@ -46,7 +46,7 @@ export const getProviderBookings = async (req: Request, res: Response): Promise<
 
     const bookings = await Booking.find(filter)
       .sort({ scheduledStartTime: 1, createdAt: -1 })
-      .populate('customerId', 'name email')
+      .populate('customerId', 'name email phone')
       .populate('providerId', 'displayName phone serviceArea skills')
       .populate('serviceId', 'name slug')
       .populate('categoryId', 'name slug');
@@ -82,7 +82,7 @@ export const getProviderBookingById = async (req: Request, res: Response): Promi
     }
 
     const booking = await Booking.findById(id)
-      .populate('customerId', 'name email')
+      .populate('customerId', 'name email phone')
       .populate('providerId', 'displayName phone serviceArea skills')
       .populate('serviceId', 'name slug')
       .populate('categoryId', 'name slug');
@@ -240,7 +240,7 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
 
     // Populate relations for safe client DTO response
     await updated.populate([
-      { path: 'customerId', select: 'name email' },
+      { path: 'customerId', select: 'name email phone' },
       { path: 'providerId', select: 'displayName phone serviceArea skills' },
       { path: 'serviceId', select: 'name slug' },
       { path: 'categoryId', select: 'name slug' },
@@ -346,7 +346,7 @@ export const rejectBooking = async (req: Request, res: Response): Promise<void> 
       },
       { returnDocument: 'after' }
     )
-      .populate('customerId', 'name email')
+      .populate('customerId', 'name email phone')
       .populate('providerId', 'displayName phone serviceArea skills')
       .populate('serviceId', 'name slug')
       .populate('categoryId', 'name slug');
@@ -464,7 +464,7 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
       },
       { returnDocument: 'after' }
     )
-      .populate('customerId', 'name email')
+      .populate('customerId', 'name email phone')
       .populate('providerId', 'displayName phone serviceArea skills')
       .populate('serviceId', 'name slug')
       .populate('categoryId', 'name slug');
@@ -533,5 +533,119 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
     res.status(200).json(response);
   } catch (error: any) {
     sendInternalError(res, 'BookingProvider.updateBookingStatus', error, 'Failed to update booking status.');
+  }
+};
+
+/**
+ * Provider: Cancel an assigned booking with structured explanation (Milestone 2C)
+ * PATCH /api/provider/bookings/:id/cancel
+ */
+export const cancelBookingByProvider = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user || !req.providerProfile) {
+      res.status(403).json({ success: false, message: 'Approved provider credentials required.' });
+      return;
+    }
+
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { reason }: { reason?: string } = req.body || {};
+
+    if (!id || !Types.ObjectId.isValid(id)) {
+      res.status(400).json({ success: false, message: 'Invalid booking ID format.' });
+      return;
+    }
+
+    if (!reason || typeof reason !== 'string' || reason.trim().length < 5 || reason.trim().length > 500) {
+      res.status(400).json({
+        success: false,
+        message: 'Cancellation reason must be provided (between 5 and 500 characters).',
+      });
+      return;
+    }
+
+    const booking = await Booking.findById(id);
+    if (!booking) {
+      res.status(404).json({ success: false, message: 'Booking not found.' });
+      return;
+    }
+
+    if (booking.providerId.toString() !== req.providerProfile._id.toString()) {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied: this booking is assigned to a different provider.',
+      });
+      return;
+    }
+
+    if (['completed', 'cancelled', 'rejected'].includes(booking.status)) {
+      res.status(400).json({
+        success: false,
+        message: `Cannot cancel a booking with status '${booking.status}'.`,
+      });
+      return;
+    }
+
+    const cleanReason = reason.trim();
+
+    const updated = await Booking.findOneAndUpdate(
+      {
+        _id: booking._id,
+        providerId: req.providerProfile._id,
+        status: booking.status, // Optimistic concurrency check
+      },
+      {
+        $set: {
+          status: 'cancelled',
+          cancellationReason: cleanReason,
+        },
+        $push: {
+          statusHistory: {
+            actorId: req.user._id,
+            actorRole: 'provider',
+            fromStatus: booking.status,
+            toStatus: 'cancelled',
+            timestamp: new Date(),
+            reason: cleanReason,
+          },
+        },
+      },
+      { returnDocument: 'after' }
+    )
+      .populate('customerId', 'name email phone')
+      .populate('providerId', 'displayName phone serviceArea skills')
+      .populate('serviceId', 'name slug')
+      .populate('categoryId', 'name slug');
+
+    if (!updated) {
+      res.status(409).json({
+        success: false,
+        message: 'Booking was concurrently modified by another request. Please refresh.',
+      });
+      return;
+    }
+
+    // Release any associated slot reservations
+    await releaseProviderSlots(booking._id);
+
+    // Notify customer
+    const providerName = (updated.providerId as any)?.displayName || req.providerProfile.displayName || 'The service professional';
+    const safeReason = cleanReason.slice(0, 150);
+    await sendInAppNotification({
+      recipientId: booking.customerId,
+      type: 'BOOKING_CANCELLED',
+      title: 'Booking Cancelled by Provider',
+      message: `${providerName} cancelled the appointment: "${safeReason}".`,
+      bookingId: booking._id,
+      dedupKey: `booking:${booking._id}:cancelled_by_provider`,
+    });
+
+    const response: ApiResponse<BookingData> = {
+      success: true,
+      message: 'Booking successfully cancelled.',
+      data: formatBookingDto(updated),
+    };
+    res.status(200).json(response);
+  } catch (error: any) {
+    sendInternalError(res, 'BookingProvider.cancelBookingByProvider', error, 'Failed to cancel booking.');
   }
 };

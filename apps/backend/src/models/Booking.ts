@@ -24,6 +24,8 @@ export interface IBooking extends Document {
   cancellationReason?: string;
   rejectionReason?: string;
   statusHistory: IBookingStatusHistory[];
+  priceSnapshot?: number;
+  paymentStatus?: 'unpaid' | 'paid' | 'refunded' | 'pending_verification';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -159,6 +161,17 @@ const bookingSchema = new Schema<IBooking>(
     statusHistory: {
       type: [statusHistorySchema],
       default: [],
+    },
+    priceSnapshot: {
+      type: Number,
+      min: [0, 'Price snapshot must be non-negative'],
+      default: 499,
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['unpaid', 'paid', 'refunded', 'pending_verification'],
+      default: 'unpaid',
+      index: true,
     },
   },
   {

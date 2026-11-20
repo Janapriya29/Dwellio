@@ -68,20 +68,67 @@ export interface AuthTokenPayload {
   exp?: number;
 }
 
+// Provider weekly working day configuration (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+export interface ProviderWorkingDay {
+  dayOfWeek: number;
+  activeSlotIndices: number[];
+}
+
+// Provider blocked dates for holiday / time-off
+export interface ProviderBlockedDate {
+  date: string; // YYYY-MM-DD
+  reason?: string;
+}
+
 // Sanitized provider profile data representation
 export interface ProviderProfileData {
   id: string;
   userId: string;
   displayName: string;
   phone: string;
+  bio?: string;
+  experienceYears?: number;
   serviceArea: string;
+  businessAddress?: string;
+  city?: string;
   skills: string[];
+  avatarUrl?: string;
   verificationStatus: ProviderVerificationStatus;
   rejectionReason?: string;
   ratingAverage?: number;
   reviewCount?: number;
+  isAcceptingJobs?: boolean;
+  workingSchedule?: ProviderWorkingDay[];
+  blockedDates?: ProviderBlockedDate[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface UpdateProviderProfilePayload {
+  displayName?: string;
+  phone?: string;
+  bio?: string;
+  experienceYears?: number;
+  serviceArea?: string;
+  businessAddress?: string;
+  city?: string;
+  skills?: string[];
+  avatarUrl?: string;
+}
+
+export interface ProviderScheduleData {
+  isAcceptingJobs: boolean;
+  workingSchedule: ProviderWorkingDay[];
+  blockedDates: ProviderBlockedDate[];
+}
+
+export interface UpdateProviderSchedulePayload {
+  workingSchedule: ProviderWorkingDay[];
+  blockedDates?: ProviderBlockedDate[];
+}
+
+export interface UpdateAvailabilityStatusPayload {
+  isAcceptingJobs: boolean;
 }
 
 // Audit log actions
@@ -128,6 +175,7 @@ export interface ServiceData {
   slug: string;
   description?: string;
   icon?: string;
+  basePrice?: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -189,6 +237,7 @@ export interface BookingData {
     id: string;
     name: string;
     email: string;
+    phone?: string;
   };
   providerId: string;
   providerUserId: string;
@@ -219,6 +268,8 @@ export interface BookingData {
   cancellationReason?: string;
   rejectionReason?: string;
   statusHistory: BookingStatusHistoryEntry[];
+  priceSnapshot?: number;
+  paymentStatus?: 'unpaid' | 'paid' | 'refunded' | 'pending_verification';
   createdAt: string;
   updatedAt: string;
 }
@@ -353,6 +404,26 @@ export interface PaginatedReviewsData {
   reviews: PublicReviewData[];
   pagination: PaginationMeta;
   summary: ProviderRatingSummary;
+}
+
+export interface ProviderReviewsData {
+  reviews: ReviewData[];
+  pagination: PaginationMeta;
+  summary: ProviderRatingSummary;
+}
+
+export interface ProviderDashboardStats {
+  totalCompletedJobs: number;
+  totalBookings: number;
+  pendingRequests: number;
+  activeJobs: number;
+  acceptanceRate: number; // Percentage (0-100)
+  completionRate: number; // Percentage (0-100)
+  ratingAverage: number;
+  reviewCount: number;
+  totalRecordedEarnings: number; // In INR ₹
+  currentMonthEarnings: number;  // In INR ₹
+  todaysJobs: BookingData[];
 }
 
 // ----------------------------------------------------

@@ -8,6 +8,7 @@ import {
   updateProviderBookingStatus,
 } from '../../services/bookingService';
 import { fetchBookingReview, replyToReview } from '../../services/reviewService';
+import { ProviderJobDetailsModal } from './ProviderJobDetailsModal';
 
 const getBookingIdFromHash = (): string | null => {
   if (typeof window === 'undefined') return null;
@@ -35,6 +36,12 @@ export const ProviderBookingsView: React.FC = () => {
   const [isSubmittingReply, setIsSubmittingReply] = useState<boolean>(false);
   const [replyError, setReplyError] = useState<string | null>(null);
   const [highlightedBookingId, setHighlightedBookingId] = useState<string | null>(() => getBookingIdFromHash());
+  const [selectedBookingForDetails, setSelectedBookingForDetails] = useState<BookingData | null>(null);
+
+  const handleBookingUpdated = (updatedBooking: BookingData) => {
+    setBookings((prev) => prev.map((b) => (b.id === updatedBooking.id ? updatedBooking : b)));
+    setSelectedBookingForDetails((prev) => (prev?.id === updatedBooking.id ? updatedBooking : prev));
+  };
 
   // Listen to hash changes (e.g. clicking notification while already on the tab, or browser navigation)
   useEffect(() => {
@@ -278,7 +285,8 @@ export const ProviderBookingsView: React.FC = () => {
                       key={req.id}
                       id={`provider-booking-${req.id}`}
                       data-testid={`provider-booking-${req.id}`}
-                      className={`bg-white rounded-3xl p-6 border-2 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition duration-200 ${
+                      onClick={() => setSelectedBookingForDetails(req)}
+                      className={`bg-white rounded-3xl p-6 border-2 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition duration-200 cursor-pointer hover:border-dwellio-teal/60 hover:shadow-md ${
                         isHighlighted
                           ? 'border-[#D9653B] ring-4 ring-[#D9653B]/30 shadow-lg'
                           : 'border-amber-200'
@@ -309,7 +317,14 @@ export const ProviderBookingsView: React.FC = () => {
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBookingForDetails(req)}
+                        className="px-3 py-2 rounded-xl border border-dwellio-mint bg-dwellio-ivory/40 text-dwellio-teal font-semibold text-xs hover:bg-white transition"
+                      >
+                        Details &amp; Route
+                      </button>
                       <button
                         type="button"
                         disabled={isProcessing}
@@ -358,7 +373,8 @@ export const ProviderBookingsView: React.FC = () => {
                       key={job.id}
                       id={`provider-booking-${job.id}`}
                       data-testid={`provider-booking-${job.id}`}
-                      className={`bg-white rounded-3xl p-6 border shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition duration-200 ${
+                      onClick={() => setSelectedBookingForDetails(job)}
+                      className={`bg-white rounded-3xl p-6 border shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition duration-200 cursor-pointer hover:border-dwellio-teal/60 hover:shadow-md ${
                         isHighlighted
                           ? 'border-[#D9653B] ring-4 ring-[#D9653B]/30 shadow-lg'
                           : 'border-dwellio-mint/60'
@@ -384,7 +400,14 @@ export const ProviderBookingsView: React.FC = () => {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBookingForDetails(job)}
+                        className="px-3 py-2 rounded-xl border border-dwellio-mint bg-dwellio-ivory/40 text-dwellio-teal font-semibold text-xs hover:bg-white transition"
+                      >
+                        Details &amp; Route
+                      </button>
                       {job.status === 'accepted' && (
                         <button
                           type="button"
@@ -443,7 +466,8 @@ export const ProviderBookingsView: React.FC = () => {
                       key={job.id}
                       id={`provider-booking-${job.id}`}
                       data-testid={`provider-booking-${job.id}`}
-                      className={`bg-white rounded-3xl p-5 border shadow-xs transition duration-200 ${
+                      onClick={() => setSelectedBookingForDetails(job)}
+                      className={`bg-white rounded-3xl p-5 border shadow-xs transition duration-200 cursor-pointer hover:border-dwellio-teal/60 hover:shadow-md ${
                         isHighlighted
                           ? 'border-[#D9653B] ring-4 ring-[#D9653B]/30 shadow-lg'
                           : 'border-dwellio-mint/60'
@@ -456,9 +480,18 @@ export const ProviderBookingsView: React.FC = () => {
                             for {job.customer?.name} ({new Date(job.scheduledStartTime).toLocaleDateString()})
                           </span>
                         </div>
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700 self-start sm:self-auto">
-                          {job.status}
-                        </span>
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBookingForDetails(job)}
+                            className="px-2.5 py-1 rounded-lg border border-dwellio-mint bg-dwellio-ivory/40 text-dwellio-teal font-semibold text-[11px] hover:bg-white transition"
+                          >
+                            Details &amp; History
+                          </button>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700 self-start sm:self-auto">
+                            {job.status}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Customer Review Section */}
@@ -631,6 +664,13 @@ export const ProviderBookingsView: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Job Details & Execution Modal */}
+      <ProviderJobDetailsModal
+        booking={selectedBookingForDetails}
+        isOpen={!!selectedBookingForDetails}
+        onClose={() => setSelectedBookingForDetails(null)}
+        onStatusUpdated={handleBookingUpdated}
+      />
     </div>
   );
 };

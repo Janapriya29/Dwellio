@@ -14,6 +14,7 @@ export const formatBookingDto = (booking: any): BookingData => {
         id: booking.customerId._id.toString(),
         name: booking.customerId.name,
         email: booking.customerId.email,
+        phone: booking.customerId.phone,
       }
     : undefined;
 
@@ -80,6 +81,8 @@ export const formatBookingDto = (booking: any): BookingData => {
     cancellationReason: booking.cancellationReason,
     rejectionReason: booking.rejectionReason,
     statusHistory,
+    priceSnapshot: booking.priceSnapshot,
+    paymentStatus: booking.paymentStatus,
     createdAt: booking.createdAt instanceof Date ? booking.createdAt.toISOString() : new Date(booking.createdAt).toISOString(),
     updatedAt: booking.updatedAt instanceof Date ? booking.updatedAt.toISOString() : new Date(booking.updatedAt).toISOString(),
   };

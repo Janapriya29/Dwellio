@@ -218,3 +218,45 @@ export const updateProviderBookingStatus = async (
 
   return json.data!;
 };
+
+/**
+ * Provider: Get single assigned booking details with customer contact (Milestone 2C)
+ */
+export const fetchProviderBookingById = async (
+  id: string,
+  token: string
+): Promise<BookingData> => {
+  const res = await fetch(`${API_BASE_URL}/provider/bookings/${id}`, {
+    method: 'GET',
+    headers: authHeaders(token),
+  });
+
+  const json: ApiResponse<BookingData> = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.message || `Failed to fetch booking details: HTTP ${res.status}`);
+  }
+
+  return json.data!;
+};
+
+/**
+ * Provider: Cancel an assigned booking with structured reason (Milestone 2C)
+ */
+export const cancelProviderBooking = async (
+  id: string,
+  reason: string,
+  token: string
+): Promise<BookingData> => {
+  const res = await fetch(`${API_BASE_URL}/provider/bookings/${id}/cancel`, {
+    method: 'PATCH',
+    headers: authHeaders(token),
+    body: JSON.stringify({ reason }),
+  });
+
+  const json: ApiResponse<BookingData> = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.message || `Failed to cancel booking: HTTP ${res.status}`);
+  }
+
+  return json.data!;
+};

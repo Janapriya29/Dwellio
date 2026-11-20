@@ -14,6 +14,7 @@ import {
   acceptBooking,
   rejectBooking,
   updateBookingStatus,
+  cancelBookingByProvider,
 } from '../controllers/bookingProvider';
 
 export const bookingRouter = Router();
@@ -35,3 +36,4 @@ bookingRouter.get('/provider/bookings/:id', requireAuth, requireApprovedProvider
 bookingRouter.patch('/provider/bookings/:id/accept', requireAuth, requireApprovedProvider, acceptBooking);
 bookingRouter.patch('/provider/bookings/:id/reject', requireAuth, requireApprovedProvider, rejectBooking);
 bookingRouter.patch('/provider/bookings/:id/status', requireAuth, requireApprovedProvider, updateBookingStatus);
+bookingRouter.patch('/provider/bookings/:id/cancel', requireAuth, requireApprovedProvider, cancelBookingByProvider);

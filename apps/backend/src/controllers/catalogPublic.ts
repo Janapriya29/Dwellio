@@ -237,6 +237,17 @@ export const getProviderAvailability = async (req: Request, res: Response): Prom
       : 0;
 
     const now = Date.now();
+    const dayOfWeek = dateObj.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+
+    // Check if provider is currently accepting new jobs
+    const isAccepting = provider.isAcceptingJobs ?? true;
+
+    // Check if date is blocked (holiday / vacation / time-off)
+    const blockedEntry = provider.blockedDates?.find((b) => b.date === cleanDate);
+
+    // Check weekly working day schedule
+    const daySchedule = provider.workingSchedule?.find((w) => w.dayOfWeek === dayOfWeek);
+
     const slots: ProviderSlotAvailability[] = [];
 
     for (const def of STANDARD_TIME_SLOTS) {
@@ -250,8 +261,17 @@ export const getProviderAvailability = async (req: Request, res: Response): Prom
       let isAvailable = true;
       let reason: string | undefined;
 
-      // Check if slot has already elapsed in real time
-      if (startMs <= now) {
+      if (!isAccepting) {
+        isAvailable = false;
+        reason = 'Not accepting bookings';
+      } else if (blockedEntry) {
+        isAvailable = false;
+        reason = blockedEntry.reason || 'Provider on leave';
+      } else if (daySchedule && !daySchedule.activeSlotIndices.includes(def.slotIndex)) {
+        isAvailable = false;
+        reason = 'Off duty';
+      } else if (startMs <= now) {
+        // Check if slot has already elapsed in real time
         isAvailable = false;
         reason = 'Past window';
       } else {
