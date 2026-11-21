@@ -83,6 +83,8 @@ export const formatBookingDto = (booking: any): BookingData => {
     statusHistory,
     priceSnapshot: booking.priceSnapshot,
     paymentStatus: booking.paymentStatus,
+    commissionRateSnapshot: booking.commissionRateSnapshot,
+    commissionAmountSnapshot: booking.commissionAmountSnapshot,
     createdAt: booking.createdAt instanceof Date ? booking.createdAt.toISOString() : new Date(booking.createdAt).toISOString(),
     updatedAt: booking.updatedAt instanceof Date ? booking.updatedAt.toISOString() : new Date(booking.updatedAt).toISOString(),
   };

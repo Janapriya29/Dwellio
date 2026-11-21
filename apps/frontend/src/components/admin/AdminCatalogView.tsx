@@ -61,6 +61,7 @@ export const AdminCatalogView: React.FC = () => {
     slug: '',
     description: '',
     icon: '🔧',
+    basePrice: 499,
   });
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -188,6 +189,7 @@ export const AdminCatalogView: React.FC = () => {
       slug: '',
       description: '',
       icon: '🔧',
+      basePrice: 499,
     });
     setModalError(null);
     setIsAddSvcModalOpen(true);
@@ -201,6 +203,7 @@ export const AdminCatalogView: React.FC = () => {
       slug: svc.slug,
       description: svc.description || '',
       icon: svc.icon || '🔧',
+      basePrice: svc.basePrice ?? 499,
     });
     setModalError(null);
   };
@@ -226,12 +229,16 @@ export const AdminCatalogView: React.FC = () => {
           categoryId: svcFormData.categoryId,
           description: svcFormData.description?.trim(),
           icon: svcFormData.icon?.trim(),
+          basePrice: svcFormData.basePrice !== undefined ? Number(svcFormData.basePrice) : undefined,
         };
         await updateAdminService(token, editingService.id, updatePayload);
         setFeedbackMessage(`Updated service "${svcFormData.name}".`);
         setEditingService(null);
       } else {
-        await createAdminService(token, svcFormData);
+        await createAdminService(token, {
+          ...svcFormData,
+          basePrice: svcFormData.basePrice !== undefined ? Number(svcFormData.basePrice) : 499,
+        });
         setFeedbackMessage(`Created new service "${svcFormData.name}".`);
         setIsAddSvcModalOpen(false);
       }
@@ -477,6 +484,7 @@ export const AdminCatalogView: React.FC = () => {
                       <th className="py-3 px-4">Service</th>
                       <th className="py-3 px-4">Category</th>
                       <th className="py-3 px-4">Slug</th>
+                      <th className="py-3 px-4">Base Price</th>
                       <th className="py-3 px-4">Status</th>
                       <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
@@ -503,6 +511,9 @@ export const AdminCatalogView: React.FC = () => {
                             {parentCat?.name || svc.categoryId}
                           </td>
                           <td className="py-3 px-4 font-mono text-[11px] text-dwellio-teal/70">{svc.slug}</td>
+                          <td className="py-3 px-4 font-black text-dwellio-teal">
+                            ₹{svc.basePrice ?? 499}
+                          </td>
                           <td className="py-3 px-4">
                             <span
                               className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold border ${
@@ -733,6 +744,23 @@ export const AdminCatalogView: React.FC = () => {
                   rows={2}
                   className="w-full text-xs p-2.5 border border-dwellio-mint/60 rounded-xl focus:outline-hidden"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-dwellio-teal mb-1">Base Price (₹ INR) *</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  required
+                  value={svcFormData.basePrice ?? 499}
+                  onChange={(e) => setSvcFormData({ ...svcFormData, basePrice: Number(e.target.value) })}
+                  placeholder="e.g. 499"
+                  className="w-full text-xs p-2.5 border border-dwellio-mint/60 rounded-xl focus:outline-hidden"
+                />
+                <span className="text-[10px] text-dwellio-teal/60">
+                  Platform catalog base price (used as starting booking price snapshot)
+                </span>
               </div>
 
               <div>

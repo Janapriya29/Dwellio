@@ -38,6 +38,11 @@ const notificationSchema = new Schema<INotification>(
         'REVIEW_REPLIED',
         'APPLICATION_APPROVED',
         'APPLICATION_REJECTED',
+        'SYSTEM_ANNOUNCEMENT',
+        'DISPUTE_RAISED',
+        'DISPUTE_RESOLVED',
+        'BOOKING_ADMIN_CANCELLED',
+        'ACCOUNT_SUSPENDED',
       ],
     },
     title: {

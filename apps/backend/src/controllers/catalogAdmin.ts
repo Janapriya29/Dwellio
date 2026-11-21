@@ -246,7 +246,7 @@ export const listAdminServices = async (req: Request, res: Response): Promise<vo
  * POST /api/admin/catalog/services
  */
 export const createService = async (req: Request, res: Response): Promise<void> => {
-  const { categoryId, name, slug, description, icon, isActive } = req.body;
+  const { categoryId, name, slug, description, icon, isActive, basePrice } = req.body;
 
   if (!categoryId || !mongoose.Types.ObjectId.isValid(categoryId)) {
     res.status(400).json({ success: false, message: 'A valid categoryId is required.' });
@@ -262,6 +262,15 @@ export const createService = async (req: Request, res: Response): Promise<void> 
   if (!name || typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 100) {
     res.status(400).json({ success: false, message: 'Service name must be between 2 and 100 characters.' });
     return;
+  }
+
+  let parsedBasePrice = 499;
+  if (basePrice !== undefined) {
+    if (typeof basePrice !== 'number' || isNaN(basePrice) || !isFinite(basePrice) || basePrice < 0 || basePrice > 100000) {
+      res.status(400).json({ success: false, message: 'Base price must be a valid number between ₹0 and ₹100,000.' });
+      return;
+    }
+    parsedBasePrice = Math.round(basePrice);
   }
 
   const normalizedSlug = (slug || name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''))
@@ -291,6 +300,7 @@ export const createService = async (req: Request, res: Response): Promise<void> 
     slug: normalizedSlug,
     description: typeof description === 'string' ? description.trim() : undefined,
     icon: typeof icon === 'string' ? icon.trim() : undefined,
+    basePrice: parsedBasePrice,
     isActive: isActive !== undefined ? Boolean(isActive) : true,
   });
 
@@ -306,6 +316,7 @@ export const createService = async (req: Request, res: Response): Promise<void> 
         categoryId: newService.categoryId,
         name: newService.name,
         slug: newService.slug,
+        basePrice: newService.basePrice,
       },
     }).save().catch(() => {});
   }
@@ -335,7 +346,7 @@ export const updateService = async (req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const { name, description, icon } = req.body;
+  const { name, description, icon, basePrice } = req.body;
 
   if (name !== undefined) {
     if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 100) {
@@ -353,18 +364,35 @@ export const updateService = async (req: Request, res: Response): Promise<void> 
     service.icon = typeof icon === 'string' ? icon.trim() : service.icon;
   }
 
+  let priceChanged = false;
+  let oldPrice = service.basePrice;
+  if (basePrice !== undefined) {
+    if (typeof basePrice !== 'number' || isNaN(basePrice) || !isFinite(basePrice) || basePrice < 0 || basePrice > 100000) {
+      res.status(400).json({ success: false, message: 'Base price must be a valid number between ₹0 and ₹100,000.' });
+      return;
+    }
+    const newPrice = Math.round(basePrice);
+    if (service.basePrice !== newPrice) {
+      priceChanged = true;
+      oldPrice = service.basePrice;
+      service.basePrice = newPrice;
+    }
+  }
+
   await service.save();
 
   if (req.user) {
     await new AuditLog({
       adminId: req.user._id,
-      action: 'SERVICE_UPDATED',
+      action: priceChanged ? 'SERVICE_BASE_PRICE_CHANGED' : 'SERVICE_UPDATED',
       targetId: service._id,
       targetType: 'Service',
       details: {
         categoryId: service.categoryId,
         name: service.name,
         slug: service.slug,
+        basePrice: service.basePrice,
+        ...(priceChanged ? { previousPrice: oldPrice, newPrice: service.basePrice } : {}),
       },
     }).save().catch(() => {});
   }

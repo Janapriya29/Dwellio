@@ -25,6 +25,7 @@ export const toServiceData = (svc: IService): ServiceData => {
     slug: svc.slug,
     description: svc.description,
     icon: svc.icon,
+    basePrice: svc.basePrice,
     isActive: svc.isActive,
     createdAt: svc.createdAt ? svc.createdAt.toISOString() : new Date().toISOString(),
     updatedAt: svc.updatedAt ? svc.updatedAt.toISOString() : new Date().toISOString(),

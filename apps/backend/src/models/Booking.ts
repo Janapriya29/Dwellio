@@ -26,6 +26,11 @@ export interface IBooking extends Document {
   statusHistory: IBookingStatusHistory[];
   priceSnapshot?: number;
   paymentStatus?: 'unpaid' | 'paid' | 'refunded' | 'pending_verification';
+  commissionRateSnapshot?: number;
+  commissionAmountSnapshot?: number;
+  paymentStatusReason?: string;
+  paymentStatusUpdatedAt?: Date;
+  paymentStatusUpdatedBy?: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -172,6 +177,27 @@ const bookingSchema = new Schema<IBooking>(
       enum: ['unpaid', 'paid', 'refunded', 'pending_verification'],
       default: 'unpaid',
       index: true,
+    },
+    commissionRateSnapshot: {
+      type: Number,
+      min: [0, 'Commission rate must be non-negative'],
+      max: [100, 'Commission rate cannot exceed 100%'],
+    },
+    commissionAmountSnapshot: {
+      type: Number,
+      min: [0, 'Commission amount must be non-negative'],
+    },
+    paymentStatusReason: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Payment status reason cannot exceed 500 characters'],
+    },
+    paymentStatusUpdatedAt: {
+      type: Date,
+    },
+    paymentStatusUpdatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
     },
   },
   {

@@ -6,3 +6,7 @@ export * from './Service';
 export * from './Booking';
 export * from './SlotReservation';
 export * from './Review';
+export * from './Notification';
+export * from './PlatformSetting';
+export * from './Dispute';
+export * from './Announcement';

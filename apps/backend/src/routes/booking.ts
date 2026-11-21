@@ -16,6 +16,10 @@ import {
   updateBookingStatus,
   cancelBookingByProvider,
 } from '../controllers/bookingProvider';
+import {
+  createBookingDispute,
+  getBookingDisputes,
+} from '../controllers/adminDispute';
 
 export const bookingRouter = Router();
 
@@ -37,3 +41,9 @@ bookingRouter.patch('/provider/bookings/:id/accept', requireAuth, requireApprove
 bookingRouter.patch('/provider/bookings/:id/reject', requireAuth, requireApprovedProvider, rejectBooking);
 bookingRouter.patch('/provider/bookings/:id/status', requireAuth, requireApprovedProvider, updateBookingStatus);
 bookingRouter.patch('/provider/bookings/:id/cancel', requireAuth, requireApprovedProvider, cancelBookingByProvider);
+
+// ----------------------------------------------------
+// Booking Disputes (Customer & Provider)
+// ----------------------------------------------------
+bookingRouter.post('/bookings/:id/disputes', requireAuth, createBookingDispute);
+bookingRouter.get('/bookings/:id/disputes', requireAuth, getBookingDisputes);

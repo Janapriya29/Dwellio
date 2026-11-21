@@ -26,7 +26,7 @@ export interface HealthStatus {
 export type UserRole = 'customer' | 'provider' | 'admin';
 
 // Provider verification status
-export type ProviderVerificationStatus = 'pending' | 'approved' | 'rejected';
+export type ProviderVerificationStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
 
 // Sanitized safe user representation (never exposes passwordHash)
 export interface SafeUser {
@@ -141,7 +141,17 @@ export type AuditLogAction =
   | 'SERVICE_CREATED'
   | 'SERVICE_UPDATED'
   | 'SERVICE_STATUS_CHANGED'
-  | 'REVIEW_MODERATED';
+  | 'REVIEW_MODERATED'
+  | 'CUSTOMER_STATUS_CHANGED'
+  | 'PROVIDER_STATUS_CHANGED'
+  | 'SERVICE_BASE_PRICE_CHANGED'
+  | 'BOOKING_ADMIN_CANCELLED'
+  | 'BOOKING_PAYMENT_STATUS_CHANGED'
+  | 'DISPUTE_CREATED'
+  | 'DISPUTE_STATUS_CHANGED'
+  | 'DISPUTE_RESOLVED'
+  | 'ANNOUNCEMENT_BROADCAST'
+  | 'PLATFORM_SETTINGS_UPDATED';
 
 // Pagination metadata envelope
 export interface PaginationMeta {
@@ -270,6 +280,9 @@ export interface BookingData {
   statusHistory: BookingStatusHistoryEntry[];
   priceSnapshot?: number;
   paymentStatus?: 'unpaid' | 'paid' | 'refunded' | 'pending_verification';
+  commissionRateSnapshot?: number;
+  commissionAmountSnapshot?: number;
+  hasDispute?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -450,6 +463,8 @@ export interface AdminOverviewStats {
   totalBookings: number;
   bookingsByStatus: Record<BookingStatus, number>;
   totalReviews: number;
+  suspendedUsers?: number;
+  financialSummary?: AdminFinancialMetrics;
 }
 
 export interface AdminOverviewData {
@@ -491,6 +506,234 @@ export interface AdminReviewItem {
 }
 
 // ----------------------------------------------------
+// Phase 3: Admin Experience Types (Milestones 3A - 3E)
+// ----------------------------------------------------
+
+// 3A: Financials & Analytics
+export interface AdminFinancialMetrics {
+  grossMerchandiseValue: number; // GMV in INR ₹ (completed bookings snapshot)
+  recordedPaidVolume: number;    // Amount explicitly marked as paid in INR ₹
+  estimatedPlatformCommission: number; // Estimated platform take in INR ₹
+  estimatedProviderPayout: number;     // Estimated net provider earnings in INR ₹
+  recordedRefundedAmount: number;      // Amount explicitly marked as refunded in INR ₹
+  currentMonthGmv: number;             // This calendar month completed GMV
+  previousMonthGmv: number;            // Previous calendar month completed GMV
+  monthOverMonthGrowthPercent: number; // MoM % growth in completed GMV
+  platformCommissionPercent?: number; // Active configured platform commission %
+}
+
+export interface TopServicePerformance {
+  serviceId: string;
+  serviceName: string;
+  categoryName: string;
+  bookingCount: number;
+  completedRevenue: number;
+}
+
+export interface CategoryPerformanceItem {
+  categoryId: string;
+  categoryName: string;
+  bookingCount: number;
+  completedRevenue: number;
+}
+
+export interface BookingTrendItem {
+  date: string; // YYYY-MM-DD
+  completed: number;
+  cancelled: number;
+  requested: number;
+  total: number;
+}
+
+export interface AdminAnalyticsData {
+  financials: AdminFinancialMetrics;
+  topServices: TopServicePerformance[];
+  topCategories: CategoryPerformanceItem[];
+  categoryPerformance?: CategoryPerformanceItem[];
+  bookingTrends: BookingTrendItem[];
+}
+
+// 3B: Customer Management
+export interface AdminCustomerItem {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  isActive: boolean;
+  totalBookings: number;
+  totalRecordedSpend: number; // In INR ₹
+  totalSpent?: number;
+  createdAt: string;
+}
+
+export interface AdminCustomerDetail {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  isActive: boolean;
+  totalBookings: number;
+  totalRecordedSpend: number; // In INR ₹
+  totalSpent?: number;
+  statusReason?: string;
+  suspensionReason?: string;
+  suspendedAt?: string;
+  bookingStatusCounts: Record<BookingStatus, number>;
+  bookingsByStatus?: Record<BookingStatus, number>;
+  recentBookings: BookingData[];
+  createdAt: string;
+}
+
+export interface UpdateCustomerStatusPayload {
+  isActive: boolean;
+  reason?: string;
+}
+
+// 3C: Provider Governance & Detail
+export interface AdminProviderDetail {
+  id: string;
+  userId: string;
+  displayName: string;
+  phone: string;
+  serviceArea: string;
+  skills: string[];
+  bio?: string;
+  yearsOfExperience?: number;
+  profilePictureUrl?: string;
+  verificationStatus: ProviderVerificationStatus;
+  rejectionReason?: string;
+  suspensionReason?: string;
+  suspendedAt?: string;
+  reviewedAt?: string;
+  workingSchedule: ProviderWorkingDay[];
+  blockedDates: ProviderBlockedDate[];
+  isAcceptingJobs: boolean;
+  ratingAverage: number;
+  reviewCount: number;
+  completedJobCount: number;
+  completedJobsCount?: number;
+  cancelledJobCount: number;
+  totalRecordedEarnings: number; // In INR ₹
+  lifetimeEarnings?: number;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    isActive: boolean;
+  };
+  createdAt: string;
+}
+
+export interface UpdateProviderStatusPayload {
+  status: 'approved' | 'suspended';
+  reason?: string;
+}
+
+// 3D: Booking Intervention & Disputes
+export interface AdminCancelBookingPayload {
+  reason: string;
+}
+
+export interface AdminUpdatePaymentStatusPayload {
+  paymentStatus: 'unpaid' | 'paid' | 'refunded' | 'pending_verification';
+  reason?: string;
+}
+
+export type DisputeStatus = 'open' | 'under_review' | 'resolved' | 'rejected' | 'dismissed';
+
+export type DisputeCategory =
+  | 'service_quality'
+  | 'no_show'
+  | 'pricing_dispute'
+  | 'damage_or_safety'
+  | 'communication'
+  | 'other';
+
+export interface DisputeData {
+  id: string;
+  bookingId: string;
+  booking?: BookingData;
+  raisedByUserId: string;
+  raisedByRole: 'customer' | 'provider';
+  initiatorRole?: 'customer' | 'provider';
+  raisedAgainstUserId: string;
+  raisedAgainstRole: 'customer' | 'provider';
+  customerName?: string;
+  providerName?: string;
+  serviceName?: string;
+  category: DisputeCategory;
+  reason?: DisputeCategory;
+  description: string;
+  status: DisputeStatus;
+  adminNotes?: string;
+  resolutionReason?: string;
+  resolvedByAdminId?: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateDisputePayload {
+  bookingId: string;
+  category: DisputeCategory;
+  description: string;
+}
+
+export interface ResolveDisputePayload {
+  status: 'under_review' | 'resolved' | 'rejected' | 'dismissed';
+  adminNotes?: string;
+  resolutionReason?: string;
+}
+
+// 3E: Announcements & Platform Settings
+export type AnnouncementAudience = 'all' | 'customers' | 'providers';
+export type AnnouncementDeliveryStatus = 'pending' | 'processing' | 'delivered' | 'partially_failed';
+
+export interface AnnouncementData {
+  id: string;
+  title: string;
+  message: string;
+  audience: AnnouncementAudience;
+  createdByAdminId: string;
+  createdByName?: string;
+  recipientCount: number;
+  deliveredCount?: number;
+  failedCount?: number;
+  deliveryStatus?: AnnouncementDeliveryStatus;
+  expiresAt?: string;
+  createdAt: string;
+}
+
+export interface CreateAnnouncementPayload {
+  title: string;
+  message: string;
+  audience: AnnouncementAudience;
+  expiresAt?: string;
+}
+
+export interface PlatformSettingsData {
+  platformCommissionPercent: number; // E.g. 15
+  supportEmail: string;
+  supportPhone: string;
+  emergencyMaintenanceNotice: {
+    enabled: boolean;
+    message: string;
+  };
+  updatedAt?: string;
+  updatedByAdminEmail?: string;
+}
+
+export interface UpdatePlatformSettingsPayload {
+  platformCommissionPercent?: number;
+  supportEmail?: string;
+  supportPhone?: string;
+  emergencyMaintenanceNotice?: {
+    enabled: boolean;
+    message: string;
+  };
+}
+
+// ----------------------------------------------------
 // Phase 9: Notifications & Communication Types
 // ----------------------------------------------------
 
@@ -506,7 +749,12 @@ export type NotificationType =
   | 'REVIEW_RECEIVED'
   | 'REVIEW_REPLIED'
   | 'APPLICATION_APPROVED'
-  | 'APPLICATION_REJECTED';
+  | 'APPLICATION_REJECTED'
+  | 'SYSTEM_ANNOUNCEMENT'
+  | 'DISPUTE_RAISED'
+  | 'DISPUTE_RESOLVED'
+  | 'BOOKING_ADMIN_CANCELLED'
+  | 'ACCOUNT_SUSPENDED';
 
 export interface NotificationData {
   id: string;

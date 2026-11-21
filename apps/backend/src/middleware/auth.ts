@@ -142,6 +142,8 @@ export const requireApprovedProvider = async (
       message:
         profile.verificationStatus === 'pending'
           ? 'Access denied: provider account is pending administrator approval.'
+          : profile.verificationStatus === 'suspended'
+          ? `Access denied: provider account is suspended. Reason: ${profile.suspensionReason || 'Account suspended by administration'}`
           : `Access denied: provider application was rejected. Reason: ${profile.rejectionReason || 'Requirements not met'}`,
     };
     res.status(403).json(response);

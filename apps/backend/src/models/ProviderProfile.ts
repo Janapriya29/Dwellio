@@ -15,6 +15,9 @@ export interface IProviderProfile extends Document {
   categories?: Types.ObjectId[];
   verificationStatus: ProviderVerificationStatus;
   rejectionReason?: string;
+  suspensionReason?: string;
+  suspendedAt?: Date;
+  userDeactivatedBySuspension?: boolean;
   reviewedBy?: Types.ObjectId;
   reviewedAt?: Date;
   ratingAverage: number;
@@ -127,7 +130,7 @@ const providerProfileSchema = new Schema<IProviderProfile>(
     verificationStatus: {
       type: String,
       enum: {
-        values: ['pending', 'approved', 'rejected'] as ProviderVerificationStatus[],
+        values: ['pending', 'approved', 'rejected', 'suspended'] as ProviderVerificationStatus[],
         message: '{VALUE} is not a valid verification status',
       },
       default: 'pending',
@@ -137,6 +140,18 @@ const providerProfileSchema = new Schema<IProviderProfile>(
       type: String,
       trim: true,
       maxlength: [500, 'Rejection reason cannot exceed 500 characters'],
+    },
+    suspensionReason: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Suspension reason cannot exceed 500 characters'],
+    },
+    suspendedAt: {
+      type: Date,
+    },
+    userDeactivatedBySuspension: {
+      type: Boolean,
+      default: false,
     },
     reviewedBy: {
       type: Schema.Types.ObjectId,

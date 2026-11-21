@@ -2,25 +2,40 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { AdminOverviewView } from './AdminOverviewView';
 import { AdminProvidersView } from './AdminProvidersView';
+import { AdminCustomersView } from './AdminCustomersView';
+import { AdminVerifiedProvidersView } from './AdminVerifiedProvidersView';
 import { AdminCatalogView } from './AdminCatalogView';
 import { AdminBookingsView } from './AdminBookingsView';
+import { AdminDisputesView } from './AdminDisputesView';
 import { AdminReviewsView } from './AdminReviewsView';
+import { AdminAnnouncementsView } from './AdminAnnouncementsView';
+import { AdminSettingsView } from './AdminSettingsView';
 import { AdminAuditLogsView } from './AdminAuditLogsView';
 
 export type AdminSubTab =
   | 'overview'
   | 'applications'
+  | 'customers'
+  | 'providers'
   | 'catalog'
   | 'bookings'
+  | 'disputes'
   | 'reviews'
+  | 'announcements'
+  | 'settings'
   | 'audit-logs';
 
 const SUB_TABS: { id: AdminSubTab; label: string; icon: string }[] = [
   { id: 'overview', label: 'Overview', icon: '📊' },
-  { id: 'applications', label: 'Applications', icon: '👷' },
+  { id: 'applications', label: 'Applications', icon: '📝' },
+  { id: 'customers', label: 'Customers', icon: '👥' },
+  { id: 'providers', label: 'Providers', icon: '👷' },
   { id: 'catalog', label: 'Catalog', icon: '🗂️' },
   { id: 'bookings', label: 'Bookings', icon: '📅' },
+  { id: 'disputes', label: 'Disputes', icon: '⚖️' },
   { id: 'reviews', label: 'Reviews', icon: '⭐' },
+  { id: 'announcements', label: 'Announcements', icon: '📢' },
+  { id: 'settings', label: 'Settings', icon: '⚙️' },
   { id: 'audit-logs', label: 'Audit Trail', icon: '📜' },
 ];
 
@@ -74,7 +89,7 @@ export const AdminDashboardLayout: React.FC = () => {
           </div>
           <h1 className="text-2xl font-black tracking-tight mt-1">Platform Management &amp; Oversight</h1>
           <p className="text-xs text-white/80 mt-0.5">
-            Real-time operations, provider verification, service catalog governance, and review moderation.
+            Platform analytics, customer and provider governance, dispute adjudication, catalog, and broadcast alerts.
           </p>
         </div>
 
@@ -108,9 +123,14 @@ export const AdminDashboardLayout: React.FC = () => {
       <main>
         {activeSubTab === 'overview' && <AdminOverviewView onNavigateTab={setActiveSubTab} />}
         {activeSubTab === 'applications' && <AdminProvidersView />}
+        {activeSubTab === 'customers' && <AdminCustomersView />}
+        {activeSubTab === 'providers' && <AdminVerifiedProvidersView />}
         {activeSubTab === 'catalog' && <AdminCatalogView />}
         {activeSubTab === 'bookings' && <AdminBookingsView />}
+        {activeSubTab === 'disputes' && <AdminDisputesView />}
         {activeSubTab === 'reviews' && <AdminReviewsView />}
+        {activeSubTab === 'announcements' && <AdminAnnouncementsView />}
+        {activeSubTab === 'settings' && <AdminSettingsView />}
         {activeSubTab === 'audit-logs' && <AdminAuditLogsView />}
       </main>
     </div>

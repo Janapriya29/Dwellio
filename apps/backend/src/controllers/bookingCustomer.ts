@@ -6,6 +6,7 @@ import { Service } from '../models/Service';
 import { ProviderProfile } from '../models/ProviderProfile';
 import { User } from '../models/User';
 import { SlotReservation } from '../models/SlotReservation';
+import { getOrCreatePlatformSettings } from '../models/PlatformSetting';
 import {
   formatBookingDto,
   findConflictingProviderBooking,
@@ -178,7 +179,13 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // 7. Create Booking
+    // 7. Determine snapshot price and commission terms from platform settings
+    const priceSnapshot = (service as any).basePrice || (service as any).price || 499;
+    const settings = await getOrCreatePlatformSettings().catch(() => null);
+    const commissionRateSnapshot = settings ? settings.platformCommissionPercent : 15;
+    const commissionAmountSnapshot = Math.round((priceSnapshot * commissionRateSnapshot) / 100);
+
+    // 8. Create Booking
     const newBooking = new Booking({
       customerId: req.user._id,
       providerId: provider._id,
@@ -195,7 +202,9 @@ export const createBooking = async (req: Request, res: Response): Promise<void> 
       },
       customerNotes: customerNotes?.trim(),
       status: 'requested',
-      priceSnapshot: (service as any).basePrice || (service as any).price || 499,
+      priceSnapshot,
+      commissionRateSnapshot,
+      commissionAmountSnapshot,
       paymentStatus: 'unpaid',
       statusHistory: [
         {
