@@ -26,6 +26,18 @@ export interface IProviderProfile extends Document {
   isAcceptingJobs: boolean;
   workingSchedule?: ProviderWorkingDay[];
   blockedDates?: ProviderBlockedDate[];
+  payoutMethod?: 'bank_transfer' | 'upi' | 'none';
+  payoutAccount?: {
+    beneficiaryName: string;
+    accountNumber?: string;
+    accountNumberMasked?: string;
+    ifsc?: string;
+    bankName?: string;
+    upiId?: string;
+    upiIdMasked?: string;
+  };
+  kycStatus?: 'pending' | 'submitted' | 'verified' | 'rejected';
+  razorpayAccountId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -195,6 +207,29 @@ const providerProfileSchema = new Schema<IProviderProfile>(
     blockedDates: {
       type: [blockedDateSchema],
       default: [],
+    },
+    payoutMethod: {
+      type: String,
+      enum: ['bank_transfer', 'upi', 'none'],
+      default: 'none',
+    },
+    payoutAccount: {
+      beneficiaryName: { type: String, trim: true },
+      accountNumber: { type: String, trim: true, select: false },
+      accountNumberMasked: { type: String, trim: true },
+      ifsc: { type: String, trim: true, uppercase: true },
+      bankName: { type: String, trim: true },
+      upiId: { type: String, trim: true, select: false },
+      upiIdMasked: { type: String, trim: true },
+    },
+    kycStatus: {
+      type: String,
+      enum: ['pending', 'submitted', 'verified', 'rejected'],
+      default: 'pending',
+    },
+    razorpayAccountId: {
+      type: String,
+      trim: true,
     },
   },
   {

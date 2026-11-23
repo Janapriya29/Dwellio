@@ -11,6 +11,11 @@ export interface AppConfig {
   mongoUri: string;
   jwtSecret: string;
   jwtExpiresIn: string;
+  razorpayKeyId: string;
+  razorpayKeySecret: string;
+  razorpayWebhookSecret: string;
+  razorpayMode: 'test' | 'live';
+  razorpayRouteEnabled: boolean;
 }
 
 const getEnvNumber = (key: string, defaultValue: number): number => {
@@ -42,12 +47,22 @@ export const config: AppConfig = {
   mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017/dwellio',
   jwtSecret: process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : DEV_JWT_SECRET),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_placeholder_key_id',
+  razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || 'rzp_test_placeholder_secret',
+  razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || 'rzp_test_placeholder_webhook_secret',
+  razorpayMode: (process.env.RAZORPAY_MODE === 'live' ? 'live' : 'test') as 'test' | 'live',
+  razorpayRouteEnabled: process.env.RAZORPAY_ROUTE_ENABLED === 'true',
 };
 
 // Validate critical configurations
 export const validateConfig = (): void => {
   if (!config.port || config.port < 1 || config.port > 65535) {
     throw new Error(`[Config Error] PORT must be a valid port number between 1 and 65535.`);
+  }
+
+  // Phase 4 Gateway Security Restriction: Live mode is strictly prohibited
+  if (config.razorpayMode === 'live') {
+    throw new Error(`[Config Error] Razorpay LIVE mode is strictly prohibited in this deployment. RAZORPAY_MODE must be 'test'.`);
   }
 
   if (config.nodeEnv === 'production') {

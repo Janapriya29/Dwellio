@@ -28,6 +28,17 @@ export interface IBooking extends Document {
   paymentStatus?: 'unpaid' | 'paid' | 'refunded' | 'pending_verification';
   commissionRateSnapshot?: number;
   commissionAmountSnapshot?: number;
+  paymentDueAt?: Date;
+  paymentCompletedAt?: Date;
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  razorpaySignature?: string;
+  appliedCouponCode?: string;
+  discountAmount?: number;
+  finalPayableAmount?: number;
+  refundAmount?: number;
+  refundStatus?: 'none' | 'pending' | 'processed' | 'failed' | 'partially_refunded';
+  providerPayoutStatus?: 'unsettled' | 'eligible' | 'allocated' | 'settled' | 'reversed';
   paymentStatusReason?: string;
   paymentStatusUpdatedAt?: Date;
   paymentStatusUpdatedBy?: Types.ObjectId;
@@ -186,6 +197,56 @@ const bookingSchema = new Schema<IBooking>(
     commissionAmountSnapshot: {
       type: Number,
       min: [0, 'Commission amount must be non-negative'],
+    },
+    paymentDueAt: {
+      type: Date,
+      index: true,
+    },
+    paymentCompletedAt: {
+      type: Date,
+    },
+    razorpayOrderId: {
+      type: String,
+      trim: true,
+      index: true,
+    },
+    razorpayPaymentId: {
+      type: String,
+      trim: true,
+      index: true,
+    },
+    razorpaySignature: {
+      type: String,
+      trim: true,
+    },
+    appliedCouponCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+    },
+    discountAmount: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    finalPayableAmount: {
+      type: Number,
+      min: 0,
+    },
+    refundAmount: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    refundStatus: {
+      type: String,
+      enum: ['none', 'pending', 'processed', 'failed', 'partially_refunded'],
+      default: 'none',
+    },
+    providerPayoutStatus: {
+      type: String,
+      enum: ['unsettled', 'eligible', 'allocated', 'settled', 'reversed'],
+      default: 'unsettled',
     },
     paymentStatusReason: {
       type: String,

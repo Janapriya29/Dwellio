@@ -5,7 +5,7 @@ import { fetchProviderDashboardStats } from '../../services/providerService';
 import { ProviderJobDetailsModal } from '../booking/ProviderJobDetailsModal';
 
 interface ProviderDashboardOverviewProps {
-  onNavigateTab?: (tab: 'bookings' | 'schedule' | 'reviews' | 'profile') => void;
+  onNavigateTab?: (tab: 'bookings' | 'schedule' | 'reviews' | 'earnings' | 'profile') => void;
 }
 
 export const ProviderDashboardOverview: React.FC<ProviderDashboardOverviewProps> = ({
@@ -102,6 +102,16 @@ export const ProviderDashboardOverview: React.FC<ProviderDashboardOverviewProps>
               <span>All-Time Recorded:</span>
               <strong className="text-white">₹{stats.totalRecordedEarnings.toLocaleString('en-IN')}</strong>
             </div>
+            {onNavigateTab && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab('earnings')}
+                className="mt-2 text-[10px] font-bold text-dwellio-mint hover:text-white underline flex items-center gap-1"
+              >
+                <span>View Full Earnings Ledger &amp; Payouts</span>
+                <span>→</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

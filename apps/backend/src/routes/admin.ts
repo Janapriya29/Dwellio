@@ -34,7 +34,20 @@ import {
   getAdminBookingById,
   adminCancelBooking,
   adminUpdatePaymentStatus,
+  adminInitiateRefund,
 } from '../controllers/adminBooking';
+import {
+  listPayoutBatches,
+  generatePayoutBatch,
+  approvePayoutBatch,
+  settlePayoutBatch,
+} from '../controllers/adminPayoutController';
+import {
+  listAdminCoupons,
+  createAdminCoupon,
+  updateAdminCoupon,
+  toggleAdminCouponStatus,
+} from '../controllers/couponController';
 import {
   listAdminDisputes,
   getAdminDisputeById,
@@ -103,6 +116,24 @@ adminRouter.get('/admin/bookings', listAdminBookings);
 adminRouter.get('/admin/bookings/:id', getAdminBookingById);
 adminRouter.patch('/admin/bookings/:id/cancel', adminCancelBooking);
 adminRouter.patch('/admin/bookings/:id/payment-status', adminUpdatePaymentStatus);
+adminRouter.post('/admin/bookings/:id/refund', adminInitiateRefund);
+
+// ----------------------------------------------------
+// 5B. Provider Payout Batches (Phase 4 Milestone 4B)
+// ----------------------------------------------------
+adminRouter.get('/admin/payouts/batches', listPayoutBatches);
+adminRouter.post('/admin/payouts/batches/generate', generatePayoutBatch);
+adminRouter.patch('/admin/payouts/batches/:id/approve', approvePayoutBatch);
+adminRouter.patch('/admin/payouts/batches/:id/settle', settlePayoutBatch);
+
+// ----------------------------------------------------
+// 5C. Coupon Management (Phase 4 Milestone 4D)
+// ----------------------------------------------------
+adminRouter.get('/admin/coupons', listAdminCoupons);
+adminRouter.post('/admin/coupons', createAdminCoupon);
+adminRouter.put('/admin/coupons/:id', updateAdminCoupon);
+adminRouter.patch('/admin/coupons/:id', updateAdminCoupon);
+adminRouter.patch('/admin/coupons/:id/status', toggleAdminCouponStatus);
 
 // ----------------------------------------------------
 // 6. Dispute Resolution (Milestone 3D)

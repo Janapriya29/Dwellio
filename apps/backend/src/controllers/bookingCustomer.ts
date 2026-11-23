@@ -434,6 +434,32 @@ export const cancelCustomerBooking = async (req: Request, res: Response): Promis
     // Release slot reservations when customer cancels booking
     await releaseProviderSlots(booking._id);
 
+    // Release coupon reservation if any
+    const { couponService } = await import('../services/couponService');
+    await couponService.releaseCouponReservation(booking._id, 'Booking cancelled by customer').catch(() => {});
+
+    // If booking was already paid, initiate full customer refund (Phase 4C)
+    if (booking.paymentStatus === 'paid') {
+      const { processAutomaticBookingRefund } = await import('../utils/payment');
+      await processAutomaticBookingRefund(booking._id, cancellationText, 'customer', req.user._id).catch((refErr) => {
+        console.error('[BookingCustomer.cancelCustomerBooking] Automatic refund error:', refErr);
+      });
+      // Refresh updated document to include refund fields in response
+      const refreshed = await Booking.findById(booking._id)
+        .populate('customerId', 'name email')
+        .populate('providerId', 'displayName phone serviceArea skills')
+        .populate('serviceId', 'name slug')
+        .populate('categoryId', 'name slug');
+      if (refreshed) {
+        res.status(200).json({
+          success: true,
+          message: 'Booking cancelled and full refund initiated to your payment method.',
+          data: formatBookingDto(refreshed),
+        });
+        return;
+      }
+    }
+
     // Trigger in-app notification to assigned provider (best-effort, non-blocking)
     const serviceName = (updated.serviceId as any)?.name || 'service';
     const safeReason = cancellationText.slice(0, 150);

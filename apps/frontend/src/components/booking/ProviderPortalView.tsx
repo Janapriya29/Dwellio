@@ -10,13 +10,14 @@ import { ProviderBookingsView } from './ProviderBookingsView';
 import { ProviderScheduleView } from '../provider/ProviderScheduleView';
 import { ProviderReviewsHub } from '../provider/ProviderReviewsHub';
 import { ProviderProfileModal } from '../provider/ProviderProfileModal';
+import { ProviderEarningsView } from '../provider/ProviderEarningsView';
 
 interface ProviderPortalViewProps {
   onOpenLogin: () => void;
   onOpenApply: () => void;
 }
 
-type ProviderWorkspaceTab = 'dashboard' | 'bookings' | 'schedule' | 'reviews' | 'profile';
+type ProviderWorkspaceTab = 'dashboard' | 'bookings' | 'schedule' | 'reviews' | 'earnings' | 'profile';
 
 const getInitialTab = (): ProviderWorkspaceTab => {
   if (typeof window !== 'undefined') {
@@ -24,6 +25,7 @@ const getInitialTab = (): ProviderWorkspaceTab => {
     if (hash.includes('bookingId=')) return 'bookings';
     if (hash.includes('tab=schedule')) return 'schedule';
     if (hash.includes('tab=reviews')) return 'reviews';
+    if (hash.includes('tab=earnings')) return 'earnings';
     if (hash.includes('tab=bookings')) return 'bookings';
     if (hash.includes('tab=profile')) return 'profile';
   }
@@ -499,6 +501,19 @@ export const ProviderPortalView: React.FC<ProviderPortalViewProps> = ({
 
         <button
           type="button"
+          onClick={() => setActiveTab('earnings')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+            activeTab === 'earnings'
+              ? 'bg-dwellio-teal text-white shadow-xs'
+              : 'text-dwellio-teal hover:bg-white/80'
+          }`}
+        >
+          <span>💰</span>
+          <span>Earnings &amp; Payouts</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setIsProfileModalOpen(true)}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
             activeTab === 'profile'
@@ -526,6 +541,8 @@ export const ProviderPortalView: React.FC<ProviderPortalViewProps> = ({
       {activeTab === 'schedule' && <ProviderScheduleView />}
 
       {activeTab === 'reviews' && <ProviderReviewsHub />}
+
+      {activeTab === 'earnings' && <ProviderEarningsView />}
 
       {activeTab === 'profile' && (
         <div className="bg-white p-8 rounded-3xl border border-dwellio-mint/60 shadow-xs text-center space-y-4">

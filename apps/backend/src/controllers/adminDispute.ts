@@ -168,7 +168,7 @@ export const getAdminDisputeById = async (req: Request, res: Response): Promise<
 export const resolveAdminDispute = async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string;
-    const { status, adminNotes, resolutionReason } = req.body;
+    const { status, adminNotes, resolutionReason, financialAction, awardedRefundAmount } = req.body;
 
     if (!id || typeof id !== 'string' || !mongoose.Types.ObjectId.isValid(id)) {
       res.status(400).json({ success: false, message: 'Invalid dispute ID format.' });
@@ -207,6 +207,186 @@ export const resolveAdminDispute = async (req: Request, res: Response): Promise<
     if (['resolved', 'rejected'].includes(status)) {
       dispute.resolvedByAdminId = req.user!._id;
       dispute.resolvedAt = new Date();
+    }
+
+    // Process Financial Settlement Action (Milestone 4C)
+    // Atomic conditional settlement claim with stable idempotency reference
+    if (financialAction && ['full_refund', 'partial_refund'].includes(financialAction)) {
+      dispute.financialAction = financialAction;
+
+      const { Booking } = await import('../models/Booking');
+      const { Payment } = await import('../models/Payment');
+      const { Refund } = await import('../models/Refund');
+      const { razorpayService } = await import('../services/razorpayService');
+      const { payoutService } = await import('../services/payoutService');
+
+      const refundIdempotencyKey = `dispute_refund:${dispute._id.toString()}`;
+      const settlementReceipt = `rfnd_disp_${dispute._id.toString().slice(-14)}`;
+
+      // 1. Recover existing settlement attempt if already processed
+      let existingRefund = await Refund.findOne({
+        $or: [
+          { disputeId: dispute._id },
+          { idempotencyKey: refundIdempotencyKey },
+        ],
+      });
+
+      if (existingRefund) {
+        dispute.refundId = existingRefund._id;
+        dispute.awardedRefundAmount = Math.round(existingRefund.amount / 100);
+        dispute.financialAction = financialAction;
+        dispute.settlementStatus = 'completed';
+      } else if (!dispute.refundId) {
+        // Atomic conditional settlement claim: only one concurrent admin request can claim settlement
+        const claimedDispute = await Dispute.findOneAndUpdate(
+          {
+            _id: dispute._id,
+            refundId: { $exists: false },
+            settlementStatus: { $ne: 'processing' },
+          },
+          {
+            $set: {
+              settlementStatus: 'processing',
+              settlementStartedAt: new Date(),
+              financialAction,
+            },
+          },
+          { returnDocument: 'after' }
+        );
+
+        if (!claimedDispute) {
+          // Another request is processing or has processed the dispute
+          const freshDispute = await Dispute.findById(dispute._id)
+            .populate('raisedByUserId', 'name email role')
+            .populate('raisedAgainstUserId', 'name email role');
+          if (freshDispute?.refundId) {
+            // Already resolved and settled idempotently
+            res.status(200).json({
+              success: true,
+              message: 'Dispute has already been settled and resolved.',
+              data: formatDisputeDto(freshDispute, true),
+            });
+            return;
+          }
+          res.status(409).json({
+            success: false,
+            message: 'Dispute financial settlement is currently in progress by another administrator.',
+          });
+          return;
+        }
+
+        try {
+          const booking = await Booking.findById(dispute.bookingId);
+          if (booking && (booking.paymentStatus === 'paid' || booking.paymentStatus === 'pending_verification')) {
+            const payment = await Payment.findOne({ bookingId: booking._id, status: 'captured' });
+            if (payment && payment.razorpayPaymentId) {
+              const maxRefundable = Math.max(0, payment.amount - (payment.refundedAmount || 0));
+              let refundPaise = maxRefundable;
+
+              if (financialAction === 'partial_refund' && typeof awardedRefundAmount === 'number' && awardedRefundAmount > 0) {
+                refundPaise = Math.min(Math.round(awardedRefundAmount * 100), maxRefundable);
+              }
+
+              if (refundPaise > 0) {
+                // Check with gateway if payment was already refunded before issuing refund (crash recovery)
+                const gwPayment = await razorpayService.fetchPayment(payment.razorpayPaymentId).catch(() => null);
+                let refundRes: any;
+
+                if (gwPayment && (gwPayment.amount_refunded || 0) >= (payment.refundedAmount || 0) + refundPaise) {
+                  // Gateway already processed refund
+                  refundRes = {
+                    id: `rfnd_recovered_${dispute._id.toString().slice(-8)}`,
+                    amount: refundPaise,
+                    status: gwPayment.refund_status === 'full' ? 'processed' : 'pending',
+                  };
+                } else {
+                  refundRes = await razorpayService.createRefund(payment.razorpayPaymentId, {
+                    amountPaise: refundPaise,
+                    notes: {
+                      disputeId: dispute._id.toString(),
+                      bookingId: booking._id.toString(),
+                      reason: resolutionReason || 'Dispute financial resolution',
+                    },
+                    receipt: settlementReceipt,
+                  });
+                }
+
+                const actualStatus: 'pending' | 'processed' = refundRes.status === 'processed' ? 'processed' : 'pending';
+
+                const refundDoc = new Refund({
+                  paymentId: payment._id,
+                  bookingId: booking._id,
+                  razorpayRefundId: refundRes.id,
+                  razorpayPaymentId: payment.razorpayPaymentId,
+                  amount: refundPaise,
+                  currency: 'INR',
+                  reason: resolutionReason || 'Dispute financial resolution',
+                  status: actualStatus,
+                  initiatedByRole: 'admin',
+                  initiatedByUserId: req.user!._id,
+                  disputeId: dispute._id,
+                  idempotencyKey: refundIdempotencyKey,
+                });
+                await refundDoc.save();
+
+                dispute.refundId = refundDoc._id;
+                dispute.awardedRefundAmount = Math.round(refundPaise / 100);
+                dispute.settlementStatus = 'completed';
+
+                payment.refundedAmount = (payment.refundedAmount || 0) + refundPaise;
+                payment.status = payment.refundedAmount >= payment.amount ? 'refunded' : 'partially_refunded';
+                await payment.save();
+
+                booking.paymentStatus = payment.refundedAmount >= payment.amount ? 'refunded' : 'paid';
+                booking.refundAmount = Math.round(payment.refundedAmount / 100);
+                booking.refundStatus = actualStatus === 'processed' ? (payment.refundedAmount >= payment.amount ? 'processed' : 'partially_refunded') : 'pending';
+                await booking.save();
+
+                // If booking was completed and provider was credited, record compensating debit adjustment
+                // Sourced from immutable commission snapshot, debiting strictly net provider share
+                if (booking.status === 'completed') {
+                  const commissionRate = typeof booking.commissionRateSnapshot === 'number' && !isNaN(booking.commissionRateSnapshot)
+                    ? booking.commissionRateSnapshot
+                    : 15;
+                  const netClawbackPaise = Math.round(refundPaise * (1 - commissionRate / 100));
+
+                  if (netClawbackPaise > 0) {
+                    await payoutService.recordProviderDebitAdjustment({
+                      providerId: booking.providerId,
+                      bookingId: booking._id,
+                      disputeId: dispute._id,
+                      debitAmountPaise: netClawbackPaise,
+                      reason: `Clawback deduction (${100 - commissionRate}% net provider share) for dispute #${dispute._id.toString().slice(-8).toUpperCase()}`,
+                      entryType: 'dispute_adjustment_debit',
+                    }).catch((e) => console.error('[DisputeFinancial] Error debiting provider:', e));
+                  }
+                }
+
+                if (req.user) {
+                  await new AuditLog({
+                    adminId: req.user._id,
+                    action: 'DISPUTE_FINANCIAL_ACTION',
+                    targetId: dispute._id,
+                    targetType: 'Dispute',
+                    details: {
+                      disputeId: dispute._id,
+                      bookingId: booking._id,
+                      action: financialAction,
+                      awardedAmountRupees: Math.round(refundPaise / 100),
+                    },
+                  }).save().catch(() => {});
+                }
+              }
+            }
+          }
+        } catch (settleErr: any) {
+          // On failure, reset settlementStatus so retry is possible
+          await Dispute.findByIdAndUpdate(dispute._id, { $set: { settlementStatus: 'failed' } });
+          throw settleErr;
+        }
+      }
+    } else if (financialAction === 'payout_hold') {
+      dispute.financialAction = 'payout_hold';
     }
 
     await dispute.save();

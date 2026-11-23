@@ -85,6 +85,19 @@ export const formatBookingDto = (booking: any): BookingData => {
     paymentStatus: booking.paymentStatus,
     commissionRateSnapshot: booking.commissionRateSnapshot,
     commissionAmountSnapshot: booking.commissionAmountSnapshot,
+    paymentDueAt: booking.paymentDueAt instanceof Date
+      ? booking.paymentDueAt.toISOString()
+      : booking.paymentDueAt ? new Date(booking.paymentDueAt).toISOString() : undefined,
+    paymentCompletedAt: booking.paymentCompletedAt instanceof Date
+      ? booking.paymentCompletedAt.toISOString()
+      : booking.paymentCompletedAt ? new Date(booking.paymentCompletedAt).toISOString() : undefined,
+    razorpayOrderId: booking.razorpayOrderId,
+    razorpayPaymentId: booking.razorpayPaymentId,
+    appliedCouponCode: booking.appliedCouponCode,
+    discountAmount: booking.discountAmount,
+    finalPayableAmount: booking.finalPayableAmount,
+    refundAmount: booking.refundAmount,
+    refundStatus: booking.refundStatus,
     createdAt: booking.createdAt instanceof Date ? booking.createdAt.toISOString() : new Date(booking.createdAt).toISOString(),
     updatedAt: booking.updatedAt instanceof Date ? booking.updatedAt.toISOString() : new Date(booking.updatedAt).toISOString(),
   };

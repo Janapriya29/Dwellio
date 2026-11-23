@@ -12,6 +12,12 @@ export interface IDispute extends Document {
   status: DisputeStatus;
   adminNotes?: string;
   resolutionReason?: string;
+  requestedRefundAmount?: number;
+  awardedRefundAmount?: number;
+  financialAction?: 'none' | 'full_refund' | 'partial_refund' | 'payout_hold';
+  refundId?: Types.ObjectId;
+  settlementStatus?: 'none' | 'processing' | 'completed' | 'failed';
+  settlementStartedAt?: Date;
   resolvedByAdminId?: Types.ObjectId;
   resolvedAt?: Date;
   createdAt: Date;
@@ -81,6 +87,32 @@ const disputeSchema = new Schema<IDispute>(
       type: String,
       trim: true,
       maxlength: [2000, 'Resolution reason cannot exceed 2000 characters'],
+    },
+    requestedRefundAmount: {
+      type: Number,
+      min: 0,
+    },
+    awardedRefundAmount: {
+      type: Number,
+      min: 0,
+    },
+    financialAction: {
+      type: String,
+      enum: ['none', 'full_refund', 'partial_refund', 'payout_hold'],
+      default: 'none',
+    },
+    refundId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Refund',
+    },
+    settlementStatus: {
+      type: String,
+      enum: ['none', 'processing', 'completed', 'failed'],
+      default: 'none',
+      index: true,
+    },
+    settlementStartedAt: {
+      type: Date,
     },
     resolvedByAdminId: {
       type: Schema.Types.ObjectId,

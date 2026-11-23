@@ -7,6 +7,12 @@ import {
   updateMyAvailabilityStatus,
 } from '../controllers/providerSchedule';
 import { getMyDashboardStats, getMyReviews } from '../controllers/providerDashboard';
+import {
+  getProviderEarningsSummary,
+  getProviderEarningsLedger,
+  getProviderPayoutAccount,
+  updateProviderPayoutAccount,
+} from '../controllers/providerPayoutController';
 import { requireAuth, requireApprovedProvider } from '../middleware/auth';
 
 export const providerRouter = Router();
@@ -27,3 +33,10 @@ providerRouter.patch('/provider/availability-status', requireAuth, requireApprov
 // Approved Provider Dashboard & Reviews endpoints (Phase 2 Milestone 2D)
 providerRouter.get('/provider/dashboard/stats', requireAuth, requireApprovedProvider, getMyDashboardStats);
 providerRouter.get('/provider/reviews', requireAuth, requireApprovedProvider, getMyReviews);
+
+// Approved Provider Earnings Ledger & Payout Account endpoints (Phase 4 Milestone 4B)
+providerRouter.get('/provider/earnings/summary', requireAuth, requireApprovedProvider, getProviderEarningsSummary);
+providerRouter.get('/provider/earnings/ledger', requireAuth, requireApprovedProvider, getProviderEarningsLedger);
+providerRouter.get('/provider/payout-account', requireAuth, requireApprovedProvider, getProviderPayoutAccount);
+providerRouter.post('/provider/payout-account', requireAuth, requireApprovedProvider, updateProviderPayoutAccount);
+providerRouter.put('/provider/payout-account', requireAuth, requireApprovedProvider, updateProviderPayoutAccount);

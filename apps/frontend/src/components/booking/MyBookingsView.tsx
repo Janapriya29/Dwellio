@@ -3,6 +3,8 @@ import { BookingData, BookingStatus, ReviewData } from '@dwellio/shared';
 import { useAuth } from '../../context/AuthContext';
 import { fetchCustomerBookings, cancelCustomerBooking } from '../../services/bookingService';
 import { fetchBookingReview } from '../../services/reviewService';
+import { createPaymentOrder, verifyPayment } from '../../services/paymentService';
+import { openRazorpayCheckout } from '../../services/razorpay';
 import { ReviewModal } from './ReviewModal';
 import { RescheduleModal } from './RescheduleModal';
 
@@ -41,6 +43,38 @@ const getStatusBadge = (status: BookingStatus) => {
   }
 };
 
+const getPaymentBadge = (booking: BookingData) => {
+  const status = booking.paymentStatus;
+  switch (status) {
+    case 'paid':
+      return {
+        label: `Paid ₹${booking.finalPayableAmount || booking.priceSnapshot}`,
+        classes: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+      };
+    case 'refunded':
+      return {
+        label: `Refunded ₹${booking.refundAmount || booking.finalPayableAmount || booking.priceSnapshot}`,
+        classes: 'bg-purple-100 text-purple-800 border-purple-300',
+      };
+    case 'partially_refunded':
+      return {
+        label: `Partially Refunded ₹${booking.refundAmount}`,
+        classes: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+      };
+    case 'pending_verification':
+      return {
+        label: 'Verifying Payment',
+        classes: 'bg-amber-100 text-amber-800 border-amber-300 animate-pulse',
+      };
+    case 'unpaid':
+    default:
+      return {
+        label: 'Payment Pending',
+        classes: 'bg-amber-100 text-amber-800 border-amber-300',
+      };
+  }
+};
+
 const getBookingIdFromHash = (): string | null => {
   if (typeof window === 'undefined') return null;
   const hash = window.location.hash;
@@ -65,6 +99,57 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
   const [reschedulingBooking, setReschedulingBooking] = useState<BookingData | null>(null);
   const [rescheduleSuccessBanner, setRescheduleSuccessBanner] = useState<string | null>(null);
   const [highlightedBookingId, setHighlightedBookingId] = useState<string | null>(() => getBookingIdFromHash());
+
+  const [isProcessingPayment, setIsProcessingPayment] = useState<string | null>(null);
+  const [paymentSuccessBanner, setPaymentSuccessBanner] = useState<string | null>(null);
+  const [paymentErrorMessage, setPaymentErrorMessage] = useState<string | null>(null);
+
+  const handlePayNow = async (booking: BookingData) => {
+    if (!token) return;
+    setIsProcessingPayment(booking.id);
+    setPaymentErrorMessage(null);
+    setPaymentSuccessBanner(null);
+
+    try {
+      const orderData = await createPaymentOrder({ bookingId: booking.id }, token);
+
+      await openRazorpayCheckout({
+        orderData,
+        onSuccess: async (response) => {
+          try {
+            await verifyPayment(
+              {
+                bookingId: booking.id,
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+              },
+              token
+            );
+
+            setPaymentSuccessBanner(
+              `Payment confirmed for ${booking.service?.name || 'service'}! Your appointment is secured.`
+            );
+            loadBookings();
+          } catch (err: any) {
+            setPaymentErrorMessage(err.message || 'Payment verification failed. Please contact support.');
+          } finally {
+            setIsProcessingPayment(null);
+          }
+        },
+        onDismiss: () => {
+          setIsProcessingPayment(null);
+        },
+        onError: (err: any) => {
+          setPaymentErrorMessage(err.message || 'Payment could not be completed at gateway.');
+          setIsProcessingPayment(null);
+        },
+      });
+    } catch (err: any) {
+      setPaymentErrorMessage(err.message || 'Failed to initiate checkout.');
+      setIsProcessingPayment(null);
+    }
+  };
 
   // Listen to hash changes (e.g. clicking notification while already on the tab, or browser navigation)
   useEffect(() => {
@@ -276,6 +361,40 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
         </div>
       )}
 
+      {/* Payment Success Banner */}
+      {paymentSuccessBanner && (
+        <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="text-emerald-600 font-bold text-sm">💳</span>
+            <span className="font-bold text-emerald-900">{paymentSuccessBanner}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPaymentSuccessBanner(null)}
+            className="text-emerald-700 hover:text-emerald-900 font-bold p-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Payment Error Banner */}
+      {paymentErrorMessage && (
+        <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="text-rose-600 font-bold text-sm">⚠️</span>
+            <span className="font-medium">{paymentErrorMessage}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPaymentErrorMessage(null)}
+            className="text-rose-700 hover:text-rose-900 font-bold p-1"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Loading Skeleton */}
       {isLoading && (
         <div className="space-y-4 animate-pulse">
@@ -343,13 +462,24 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
                     </div>
                   </div>
 
-                  <span
-                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider border self-start sm:self-auto ${getStatusBadge(
-                      booking.status
-                    )}`}
-                  >
-                    {booking.status.replace(/_/g, ' ')}
-                  </span>
+                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                    {booking.paymentStatus && (
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold border ${
+                          getPaymentBadge(booking).classes
+                        }`}
+                      >
+                        {getPaymentBadge(booking).label}
+                      </span>
+                    )}
+                    <span
+                      className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider border ${getStatusBadge(
+                        booking.status
+                      )}`}
+                    >
+                      {booking.status.replace(/_/g, ' ')}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Details Grid */}
@@ -386,6 +516,41 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
                     </span>
                   </div>
                 </div>
+
+                {/* 2-Hour Payment Window Action Callout (Milestone 4A) */}
+                {booking.status === 'accepted' && booking.paymentStatus !== 'paid' && (
+                  <div className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">💳</span>
+                        <span className="text-xs font-bold text-amber-950">Payment Required to Lock In Appointment</span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 mt-0.5">
+                        Your service pro accepted this request! Please complete payment within the 2-hour window.
+                      </p>
+                      {booking.paymentDueAt && (
+                        <span className="text-[10px] text-amber-700 font-semibold block mt-1">
+                          Deadline: {new Date(booking.paymentDueAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(booking.paymentDueAt).toLocaleDateString()})
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handlePayNow(booking)}
+                      disabled={isProcessingPayment === booking.id}
+                      className="px-5 py-2.5 rounded-xl bg-dwellio-teal text-white text-xs font-bold hover:bg-dwellio-teal/90 shadow transition flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
+                    >
+                      {isProcessingPayment === booking.id ? (
+                        <>
+                          <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        `Pay ₹${booking.finalPayableAmount || booking.priceSnapshot || 499} Now`
+                      )}
+                    </button>
+                  </div>
+                )}
 
                 {/* Optional Instructions */}
                 {booking.customerNotes && (

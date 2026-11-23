@@ -202,7 +202,10 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
         status: 'requested', // Guarantees status hasn't changed concurrently
       },
       {
-        $set: { status: 'accepted' },
+        $set: {
+          status: 'accepted',
+          paymentDueAt: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2-hour payment window (Phase 4.1)
+        },
         $push: {
           statusHistory: {
             actorId: req.user._id,
@@ -253,7 +256,7 @@ export const acceptBooking = async (req: Request, res: Response): Promise<void> 
       recipientId: booking.customerId,
       type: 'BOOKING_ACCEPTED',
       title: 'Booking Confirmed',
-      message: `${providerName} confirmed your booking for ${serviceName}.`,
+      message: `${providerName} confirmed your booking for ${serviceName}. Please complete payment within 2 hours to secure your appointment.`,
       bookingId: booking._id,
       dedupKey: `booking:${booking._id}:accepted`,
     });
@@ -505,6 +508,14 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
         dedupKey: `booking:${booking._id}:in_progress`,
       });
     } else if (targetStatus === 'completed') {
+      // Credit provider earnings ledger if booking was paid (Phase 4B)
+      if (updated.paymentStatus === 'paid') {
+        const { payoutService } = await import('../services/payoutService');
+        await payoutService.recordJobCompletionEarnings(updated._id).catch((err) => {
+          console.error('[BookingProvider] Failed to record earnings for completed job:', err);
+        });
+      }
+
       await sendInAppNotification({
         recipientId: booking.customerId,
         type: 'BOOKING_COMPLETED',
@@ -626,6 +637,31 @@ export const cancelBookingByProvider = async (req: Request, res: Response): Prom
 
     // Release any associated slot reservations
     await releaseProviderSlots(booking._id);
+
+    // Release coupon reservation if any
+    const { couponService } = await import('../services/couponService');
+    await couponService.releaseCouponReservation(booking._id, 'Booking cancelled by provider').catch(() => {});
+
+    // If paid, initiate 100% customer refund (Phase 4C)
+    if (booking.paymentStatus === 'paid') {
+      const { processAutomaticBookingRefund } = await import('../utils/payment');
+      await processAutomaticBookingRefund(booking._id, cleanReason, 'provider', req.user._id).catch((refErr) => {
+        console.error('[BookingProvider.cancelBookingByProvider] Automatic refund error:', refErr);
+      });
+      const refreshed = await Booking.findById(booking._id)
+        .populate('customerId', 'name email phone')
+        .populate('providerId', 'displayName phone serviceArea skills')
+        .populate('serviceId', 'name slug')
+        .populate('categoryId', 'name slug');
+      if (refreshed) {
+        res.status(200).json({
+          success: true,
+          message: 'Booking successfully cancelled and full customer refund initiated.',
+          data: formatBookingDto(refreshed),
+        });
+        return;
+      }
+    }
 
     // Notify customer
     const providerName = (updated.providerId as any)?.displayName || req.providerProfile.displayName || 'The service professional';

@@ -7,11 +7,13 @@ import type {
   StandardTimeSlotDefinition,
   ProviderSlotAvailability,
   CustomerSavedAddress,
+  ValidateCouponResponseData,
 } from '@dwellio/shared';
 import { useAuth } from '../../context/AuthContext';
 import { createBooking } from '../../services/bookingService';
 import { fetchProviderAvailability } from '../../services/catalogService';
 import { getSavedAddresses, saveAddress } from '../../services/addressBookService';
+import { validateCoupon } from '../../services/couponService';
 
 export const STANDARD_TIME_SLOTS: StandardTimeSlotDefinition[] = [
   { slotIndex: 0, label: '09:00 AM – 11:00 AM', startHour: 9, startMin: 0, endHour: 11, endMin: 0 },
@@ -92,6 +94,42 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<BookingData | null>(null);
+
+  // Coupon state
+  const [couponCodeInput, setCouponCodeInput] = useState<string>('');
+  const [appliedCoupon, setAppliedCoupon] = useState<ValidateCouponResponseData | null>(null);
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState<boolean>(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
+
+  const selectedService = services.find((s) => s.id === selectedServiceId);
+  const baseServicePrice = selectedService?.basePrice || 499;
+
+  const handleApplyCoupon = async () => {
+    if (!couponCodeInput.trim() || !token) return;
+    setIsValidatingCoupon(true);
+    setCouponError(null);
+    try {
+      const res = await validateCoupon(
+        {
+          code: couponCodeInput.trim(),
+          bookingAmountRupees: baseServicePrice,
+        },
+        token
+      );
+      setAppliedCoupon(res);
+    } catch (err: any) {
+      setCouponError(err.message || 'Invalid or expired coupon code.');
+      setAppliedCoupon(null);
+    } finally {
+      setIsValidatingCoupon(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCodeInput('');
+    setCouponError(null);
+  };
 
   // Load saved addresses on modal open
   useEffect(() => {
@@ -598,6 +636,57 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               />
             </div>
 
+            {/* Promo Code & Discount (Milestone 4D) */}
+            <div className="mb-4 p-3.5 rounded-2xl bg-slate-50 border border-dwellio-mint/60">
+              <label htmlFor="coupon-input" className="block text-[11px] font-bold text-dwellio-teal uppercase tracking-wider mb-1.5">
+                Have a Promo Code?
+              </label>
+              {appliedCoupon ? (
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-600 font-bold text-sm">🎉</span>
+                    <div>
+                      <span className="font-mono font-bold text-emerald-900 text-xs">{appliedCoupon.code}</span>
+                      <p className="text-[10px] text-emerald-700">
+                        {appliedCoupon.message || `Saved ₹${appliedCoupon.discountAmountRupees}!`}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoupon}
+                    className="text-xs font-bold text-emerald-800 hover:text-emerald-950 underline px-2 py-1"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex gap-2">
+                    <input
+                      id="coupon-input"
+                      type="text"
+                      value={couponCodeInput}
+                      onChange={(e) => setCouponCodeInput(e.target.value.toUpperCase())}
+                      placeholder="Enter coupon (e.g. WELCOME100)"
+                      className="flex-1 rounded-xl border border-dwellio-mint/80 bg-white px-3.5 py-2 text-xs font-mono text-dwellio-teal uppercase focus:outline-none focus:ring-2 focus:ring-dwellio-teal"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyCoupon}
+                      disabled={isValidatingCoupon || !couponCodeInput.trim()}
+                      className="px-4 py-2 rounded-xl bg-dwellio-teal text-white text-xs font-bold hover:bg-dwellio-teal/90 transition disabled:opacity-50"
+                    >
+                      {isValidatingCoupon ? 'Checking...' : 'Apply'}
+                    </button>
+                  </div>
+                  {couponError && (
+                    <p className="text-[11px] text-rose-600 font-medium mt-1">{couponError}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Transparent Pricing Notice */}
             <div className="mb-4 p-3 rounded-2xl bg-dwellio-ivory/70 border border-dwellio-mint/50 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-dwellio-teal/80">
               <div className="flex items-center gap-2">
@@ -608,6 +697,24 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
               <span className="text-[11px] text-dwellio-teal/60 font-medium whitespace-nowrap">Pay On-Site</span>
             </div>
+
+            {/* Discount Summary (if applied) */}
+            {appliedCoupon && (
+              <div className="mb-4 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1">
+                <div className="flex items-center justify-between font-medium">
+                  <span>Standard Diagnostic Charge:</span>
+                  <span>₹{baseServicePrice}</span>
+                </div>
+                <div className="flex items-center justify-between font-medium text-emerald-700">
+                  <span>Coupon Savings ({appliedCoupon.code}):</span>
+                  <span>-₹{appliedCoupon.discountAmountRupees}</span>
+                </div>
+                <div className="flex items-center justify-between font-bold pt-1 border-t border-emerald-300 text-sm">
+                  <span>Net Estimated Payable:</span>
+                  <span>₹{appliedCoupon.finalPayableRupees}</span>
+                </div>
+              </div>
+            )}
 
             {/* Submit & Cancel */}
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-dwellio-mint/30">

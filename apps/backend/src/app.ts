@@ -10,6 +10,9 @@ import { catalogPublicRouter } from './routes/catalogPublic';
 import { bookingRouter } from './routes/booking';
 import { reviewRouter } from './routes/review';
 import { notificationRouter } from './routes/notification';
+import { paymentRouter } from './routes/payment';
+import { couponRouter } from './routes/coupon';
+import { financialBackgroundWorker } from './services/financialBackgroundWorker';
 import { generalApiRateLimiter } from './middleware/rateLimiter';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
 
@@ -37,8 +40,15 @@ export const createApp = (customRouter?: express.Router): Application => {
     })
   );
 
-  // 3. Explicit request body size limits (15kb cap)
-  app.use(express.json({ limit: '15kb' }));
+  // 3. Explicit request body size limits (15kb cap) with raw body preservation for webhooks (Phase 4A)
+  app.use(
+    express.json({
+      limit: '15kb',
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf;
+      },
+    })
+  );
   app.use(express.urlencoded({ extended: true, limit: '15kb' }));
 
   // 4. General API Rate Limiter across /api (automatically preserves health checks)
@@ -53,6 +63,13 @@ export const createApp = (customRouter?: express.Router): Application => {
   app.use('/api', bookingRouter);
   app.use('/api', reviewRouter);
   app.use('/api', notificationRouter);
+  app.use('/api', paymentRouter);
+  app.use('/api', couponRouter);
+
+  // Initialize financial background worker for payment expiry and cleanup
+  if (config.nodeEnv !== 'test') {
+    financialBackgroundWorker.start();
+  }
 
   // Optional custom router (used for testing or modular route injection)
   if (customRouter) {

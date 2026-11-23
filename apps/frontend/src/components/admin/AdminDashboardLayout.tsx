@@ -11,6 +11,8 @@ import { AdminReviewsView } from './AdminReviewsView';
 import { AdminAnnouncementsView } from './AdminAnnouncementsView';
 import { AdminSettingsView } from './AdminSettingsView';
 import { AdminAuditLogsView } from './AdminAuditLogsView';
+import { AdminPayoutsView } from './AdminPayoutsView';
+import { AdminCouponsView } from './AdminCouponsView';
 
 export type AdminSubTab =
   | 'overview'
@@ -20,6 +22,8 @@ export type AdminSubTab =
   | 'catalog'
   | 'bookings'
   | 'disputes'
+  | 'payouts'
+  | 'coupons'
   | 'reviews'
   | 'announcements'
   | 'settings'
@@ -33,6 +37,8 @@ const SUB_TABS: { id: AdminSubTab; label: string; icon: string }[] = [
   { id: 'catalog', label: 'Catalog', icon: '🗂️' },
   { id: 'bookings', label: 'Bookings', icon: '📅' },
   { id: 'disputes', label: 'Disputes', icon: '⚖️' },
+  { id: 'payouts', label: 'Payouts', icon: '💰' },
+  { id: 'coupons', label: 'Coupons', icon: '🏷️' },
   { id: 'reviews', label: 'Reviews', icon: '⭐' },
   { id: 'announcements', label: 'Announcements', icon: '📢' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
@@ -128,6 +134,8 @@ export const AdminDashboardLayout: React.FC = () => {
         {activeSubTab === 'catalog' && <AdminCatalogView />}
         {activeSubTab === 'bookings' && <AdminBookingsView />}
         {activeSubTab === 'disputes' && <AdminDisputesView />}
+        {activeSubTab === 'payouts' && <AdminPayoutsView />}
+        {activeSubTab === 'coupons' && <AdminCouponsView />}
         {activeSubTab === 'reviews' && <AdminReviewsView />}
         {activeSubTab === 'announcements' && <AdminAnnouncementsView />}
         {activeSubTab === 'settings' && <AdminSettingsView />}

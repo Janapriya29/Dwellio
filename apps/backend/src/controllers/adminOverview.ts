@@ -103,7 +103,7 @@ export const calculateFinancialMetrics = async (): Promise<AdminFinancialMetrics
           {
             $group: {
               _id: null,
-              totalPaid: { $sum: { $ifNull: ['$priceSnapshot', 499] } },
+              totalPaid: { $sum: { $ifNull: ['$finalPayableAmount', { $ifNull: ['$priceSnapshot', 499] }] } },
             },
           },
         ],
@@ -112,7 +112,7 @@ export const calculateFinancialMetrics = async (): Promise<AdminFinancialMetrics
           {
             $group: {
               _id: null,
-              totalRefunded: { $sum: { $ifNull: ['$priceSnapshot', 499] } },
+              totalRefunded: { $sum: { $ifNull: ['$refundAmount', { $ifNull: ['$priceSnapshot', 499] }] } },
             },
           },
         ],

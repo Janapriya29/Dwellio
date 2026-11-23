@@ -242,6 +242,18 @@ export const adminCancelBooking = async (req: Request, res: Response): Promise<v
     // Concurrency-safe release of any held slot reservations
     await releaseProviderSlots(booking._id).catch(() => {});
 
+    // Release coupon reservation if any
+    const { couponService } = await import('../services/couponService');
+    await couponService.releaseCouponReservation(booking._id, 'Booking cancelled by administrator').catch(() => {});
+
+    // If booking was paid, automatically process full refund (Phase 4C)
+    if (booking.paymentStatus === 'paid') {
+      const { processAutomaticBookingRefund } = await import('../utils/payment');
+      await processAutomaticBookingRefund(booking._id, reason.trim(), 'admin', req.user!._id).catch((err) => {
+        console.error('[AdminBooking.adminCancelBooking] Failed to process auto refund:', err);
+      });
+    }
+
     // Record immutable audit log
     if (req.user) {
       await new AuditLog({
@@ -369,5 +381,171 @@ export const adminUpdatePaymentStatus = async (req: Request, res: Response): Pro
     });
   } catch (error: any) {
     sendInternalError(res, 'AdminBooking.adminUpdatePaymentStatus', error, 'Failed to update payment status.');
+  }
+};
+
+/**
+ * Admin: Issue Full or Partial Refund for a Paid Booking
+ * POST /api/admin/bookings/:id/refund
+ */
+export const adminInitiateRefund = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const { amount, reason } = req.body || {};
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      res.status(400).json({ success: false, message: 'Invalid booking ID.' });
+      return;
+    }
+
+    if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
+      res.status(400).json({
+        success: false,
+        message: 'A structured reason of at least 5 characters is required for issuing refunds.',
+      });
+      return;
+    }
+
+    const booking = await Booking.findById(id);
+    if (!booking) {
+      res.status(404).json({ success: false, message: 'Booking not found.' });
+      return;
+    }
+
+    if (booking.paymentStatus !== 'paid' && booking.paymentStatus !== 'pending_verification') {
+      res.status(400).json({
+        success: false,
+        message: `Cannot issue refund for booking with payment status "${booking.paymentStatus}". Only paid bookings are refundable.`,
+      });
+      return;
+    }
+
+    const { Payment } = await import('../models/Payment');
+    const { Refund } = await import('../models/Refund');
+    const { razorpayService } = await import('../services/razorpayService');
+
+    const payment = await Payment.findOne({ bookingId: booking._id, status: 'captured' });
+    if (!payment || !payment.razorpayPaymentId) {
+      res.status(400).json({
+        success: false,
+        message: 'No captured gateway payment record found for this booking.',
+      });
+      return;
+    }
+
+    const maxRefundablePaise = Math.max(0, payment.amount - (payment.refundedAmount || 0));
+    if (maxRefundablePaise <= 0) {
+      res.status(400).json({
+        success: false,
+        message: 'This payment has already been fully refunded.',
+      });
+      return;
+    }
+
+    let refundPaise = maxRefundablePaise;
+    if (typeof amount === 'number' && amount > 0) {
+      const requestedPaise = Math.round(amount * 100);
+      if (requestedPaise > maxRefundablePaise) {
+        res.status(400).json({
+          success: false,
+          message: `Requested refund amount (₹${amount}) exceeds maximum refundable balance of ₹${Math.round(
+            maxRefundablePaise / 100
+          )}.`,
+        });
+        return;
+      }
+      refundPaise = requestedPaise;
+    }
+
+    // Call Razorpay Refund API
+    const refundResult = await razorpayService.createRefund(payment.razorpayPaymentId, {
+      amountPaise: refundPaise,
+      notes: {
+        bookingId: booking._id.toString(),
+        reason: reason.trim(),
+        adminId: req.user!._id.toString(),
+      },
+      receipt: `rfnd_adm_${booking._id.toString().slice(-8)}_${Date.now().toString().slice(-4)}`,
+    });
+
+    const refundDoc = new Refund({
+      paymentId: payment._id,
+      bookingId: booking._id,
+      razorpayRefundId: refundResult.id,
+      razorpayPaymentId: payment.razorpayPaymentId,
+      amount: refundPaise,
+      currency: 'INR',
+      reason: reason.trim(),
+      status: 'processed',
+      initiatedByRole: 'admin',
+      initiatedByUserId: req.user!._id,
+      idempotencyKey: `admin_refund:${booking._id.toString()}:${refundPaise}:${Date.now()}`,
+    });
+    await refundDoc.save();
+
+    // Update payment refunded amount
+    payment.refundedAmount = (payment.refundedAmount || 0) + refundPaise;
+    if (payment.refundedAmount >= payment.amount) {
+      payment.status = 'refunded';
+    } else {
+      payment.status = 'partially_refunded';
+    }
+    await payment.save();
+
+    // Update booking refund status
+    const isFullRefund = payment.refundedAmount >= payment.amount;
+    booking.paymentStatus = isFullRefund ? 'refunded' : 'paid';
+    booking.refundAmount = Math.round(payment.refundedAmount / 100);
+    booking.refundStatus = isFullRefund ? 'processed' : 'partially_refunded';
+    await booking.save();
+
+    // Audit log
+    await new AuditLog({
+      adminId: req.user!._id,
+      action: 'REFUND_COMPLETED',
+      targetId: booking._id,
+      targetType: 'Booking',
+      details: {
+        bookingId: booking._id,
+        refundAmountRupees: Math.round(refundPaise / 100),
+        razorpayRefundId: refundResult.id,
+        reason: reason.trim(),
+      },
+    }).save().catch(() => {});
+
+    // Notify customer
+    await sendInAppNotification({
+      recipientId: booking.customerId,
+      type: 'REFUND_COMPLETED',
+      title: 'Refund Processed by Administration',
+      message: `A refund of ₹${Math.round(refundPaise / 100)} has been processed for your booking (${booking._id
+        .toString()
+        .slice(-8)
+        .toUpperCase()}). Reason: ${reason.trim()}`,
+      bookingId: booking._id,
+      dedupKey: `booking:${booking._id}:admin_refund:${refundPaise}`,
+    }).catch(() => {});
+
+    const populated = await Booking.findById(booking._id)
+      .populate('customerId', 'name email')
+      .populate('providerId', 'displayName phone')
+      .populate('serviceId', 'name slug')
+      .populate('categoryId', 'name slug');
+
+    res.status(200).json({
+      success: true,
+      message: `Refund of ₹${Math.round(refundPaise / 100)} processed successfully.`,
+      data: {
+        booking: formatBookingDto(populated || booking),
+        refund: {
+          id: refundDoc._id.toString(),
+          razorpayRefundId: refundResult.id,
+          amountRupees: Math.round(refundPaise / 100),
+          status: refundDoc.status,
+        },
+      },
+    });
+  } catch (error: any) {
+    sendInternalError(res, 'AdminBooking.adminInitiateRefund', error, 'Failed to process refund.');
   }
 };

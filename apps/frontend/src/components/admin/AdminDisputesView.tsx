@@ -53,6 +53,8 @@ export const AdminDisputesView: React.FC = () => {
   const [resolutionStatus, setResolutionStatus] = useState<'under_review' | 'resolved' | 'dismissed'>('resolved');
   const [resolutionReason, setResolutionReason] = useState<string>('');
   const [adminNotes, setAdminNotes] = useState<string>('');
+  const [financialAction, setFinancialAction] = useState<'none' | 'full_refund' | 'partial_refund'>('none');
+  const [awardedRefundAmount, setAwardedRefundAmount] = useState<number | ''>('');
   const [isSubmittingResolution, setIsSubmittingResolution] = useState<boolean>(false);
   const [resolutionError, setResolutionError] = useState<string | null>(null);
 
@@ -89,6 +91,8 @@ export const AdminDisputesView: React.FC = () => {
     setResolutionError(null);
     setResolutionReason('');
     setAdminNotes('');
+    setFinancialAction('none');
+    setAwardedRefundAmount('');
     try {
       const data = await fetchAdminDisputeById(token, disputeId);
       setDisputeDetail(data);
@@ -108,6 +112,8 @@ export const AdminDisputesView: React.FC = () => {
     setSelectedDisputeId(null);
     setDisputeDetail(null);
     setResolutionError(null);
+    setFinancialAction('none');
+    setAwardedRefundAmount('');
   };
 
   const handleResolveSubmit = async (e: React.FormEvent) => {
@@ -126,9 +132,14 @@ export const AdminDisputesView: React.FC = () => {
     setResolutionError(null);
     try {
       const payload: ResolveDisputePayload = {
-        status: resolutionStatus,
+        status: resolutionStatus === 'dismissed' ? 'rejected' : resolutionStatus,
         resolutionReason: resolutionReason.trim() || undefined,
         adminNotes: adminNotes.trim() || undefined,
+        financialAction: financialAction !== 'none' ? financialAction : undefined,
+        awardedRefundAmount:
+          financialAction === 'partial_refund' && typeof awardedRefundAmount === 'number'
+            ? awardedRefundAmount
+            : undefined,
       };
 
       const updated = await resolveAdminDispute(token, selectedDisputeId, payload);
@@ -385,6 +396,41 @@ export const AdminDisputesView: React.FC = () => {
                       <option value="dismissed">Dismissed (No Platform Fault / Claim Invalid)</option>
                     </select>
                   </div>
+
+                  {/* Financial Settlement Action (Milestone 4C) */}
+                  <div>
+                    <label className="block text-xs font-bold text-dwellio-teal mb-1">
+                      Financial Settlement Action
+                    </label>
+                    <select
+                      value={financialAction}
+                      onChange={(e) => setFinancialAction(e.target.value as any)}
+                      className="w-full p-2 text-xs border border-dwellio-mint/60 rounded-xl focus:outline-hidden font-bold"
+                    >
+                      <option value="none">No Financial Gateway Refund</option>
+                      <option value="full_refund">Full Gateway Refund to Customer (Clawback Provider Ledger)</option>
+                      <option value="partial_refund">Partial Gateway Refund to Customer</option>
+                    </select>
+                  </div>
+
+                  {financialAction === 'partial_refund' && (
+                    <div>
+                      <label className="block text-xs font-bold text-dwellio-teal mb-1">
+                        Partial Refund Amount (₹) *
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        required
+                        value={awardedRefundAmount}
+                        onChange={(e) =>
+                          setAwardedRefundAmount(e.target.value ? parseInt(e.target.value, 10) : '')
+                        }
+                        placeholder="Enter partial refund in ₹"
+                        className="w-full p-2 text-xs border border-dwellio-mint/60 rounded-xl focus:outline-hidden font-bold"
+                      />
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-xs font-bold text-dwellio-teal mb-1">

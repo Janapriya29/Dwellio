@@ -7,6 +7,7 @@ import {
   adminCancelBooking,
   adminUpdatePaymentStatus,
 } from '../../services/adminService';
+import { issueAdminRefund } from '../../services/adminPayoutService';
 
 const STATUS_FILTERS: { label: string; value?: BookingStatus }[] = [
   { label: 'All Statuses' },
@@ -89,6 +90,49 @@ export const AdminBookingsView: React.FC = () => {
   const [paymentReason, setPaymentReason] = useState<string>('');
   const [isUpdatingPayment, setIsUpdatingPayment] = useState<boolean>(false);
   const [paymentModalError, setPaymentModalError] = useState<string | null>(null);
+
+  // Financial Refund Modal
+  const [refundBooking, setRefundBooking] = useState<BookingData | null>(null);
+  const [refundAmount, setRefundAmount] = useState<number | ''>('');
+  const [refundReason, setRefundReason] = useState<string>('');
+  const [isRefunding, setIsRefunding] = useState<boolean>(false);
+  const [refundModalError, setRefundModalError] = useState<string | null>(null);
+
+  const handleInitiateRefundSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !refundBooking) return;
+
+    if (!refundReason.trim() || refundReason.trim().length < 5) {
+      setRefundModalError('Reason must be at least 5 characters for compliance.');
+      return;
+    }
+
+    setIsRefunding(true);
+    setRefundModalError(null);
+    try {
+      const res = await issueAdminRefund(
+        refundBooking.id,
+        {
+          amount: typeof refundAmount === 'number' && refundAmount > 0 ? refundAmount : undefined,
+          reason: refundReason.trim(),
+        },
+        token
+      );
+
+      setActionSuccessMessage(`Refund of ₹${res.refund.amountRupees} processed successfully via Razorpay.`);
+      setRefundBooking(null);
+      setRefundReason('');
+      setRefundAmount('');
+      if (inspectingBookingId === refundBooking.id) {
+        setInspectingData(res.booking);
+      }
+      loadBookings(pagination.page);
+    } catch (err: any) {
+      setRefundModalError(err.message || 'Failed to process refund.');
+    } finally {
+      setIsRefunding(false);
+    }
+  };
 
   const loadBookings = useCallback(
     async (pageToLoad = 1) => {
@@ -601,7 +645,25 @@ export const AdminBookingsView: React.FC = () => {
               </div>
             ) : null}
 
-            <div className="flex justify-end pt-2 border-t border-dwellio-mint/30">
+            <div className="flex items-center justify-between pt-2 border-t border-dwellio-mint/30">
+              {inspectingData?.paymentStatus === 'paid' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRefundBooking(inspectingData);
+                    setRefundAmount('');
+                    setRefundReason('');
+                    setRefundModalError(null);
+                  }}
+                  className="px-4 py-2 bg-rose-50 border border-rose-300 text-rose-800 rounded-xl text-xs font-bold transition hover:bg-rose-100 flex items-center gap-1.5"
+                >
+                  <span>💸</span>
+                  <span>Issue Refund</span>
+                </button>
+              ) : (
+                <div />
+              )}
+
               <button
                 type="button"
                 onClick={() => {
@@ -737,6 +799,82 @@ export const AdminBookingsView: React.FC = () => {
                   className="px-4 py-2 bg-dwellio-teal hover:bg-dwellio-teal/90 text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
                 >
                   {isUpdatingPayment ? 'Saving...' : 'Update Status'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Financial Refund Modal */}
+      {refundBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl border border-dwellio-mint/50 p-6 max-w-md w-full shadow-xl space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-dwellio-teal">Issue Financial Refund</h3>
+              <p className="text-xs text-dwellio-teal/70 mt-1">
+                Initiate a gateway refund for Booking #{refundBooking.id.slice(-6)} via Razorpay.
+              </p>
+            </div>
+
+            {refundModalError && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold rounded-xl">
+                ✕ {refundModalError}
+              </div>
+            )}
+
+            <form onSubmit={handleInitiateRefundSubmit} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-[10px] font-bold text-dwellio-teal uppercase tracking-wider mb-1">
+                  Refund Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={refundBooking.finalPayableAmount || refundBooking.priceSnapshot || 10000}
+                  value={refundAmount}
+                  onChange={(e) =>
+                    setRefundAmount(e.target.value ? parseInt(e.target.value, 10) : '')
+                  }
+                  placeholder={`Leave blank for full refund (₹${
+                    refundBooking.finalPayableAmount || refundBooking.priceSnapshot || 499
+                  })`}
+                  className="w-full rounded-xl border border-dwellio-mint/80 bg-white px-3 py-2 text-xs text-dwellio-teal font-bold focus:outline-none focus:ring-2 focus:ring-dwellio-teal"
+                />
+                <span className="text-[10px] text-dwellio-teal/60 block mt-0.5">
+                  Full paid value: ₹{refundBooking.finalPayableAmount || refundBooking.priceSnapshot || 499}
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-dwellio-teal uppercase tracking-wider mb-1">
+                  Administrative Reason *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  placeholder="Explain why this refund is being granted (min 5 characters)..."
+                  className="w-full rounded-xl border border-dwellio-mint/80 bg-white px-3 py-2 text-xs text-dwellio-teal focus:outline-none focus:ring-2 focus:ring-dwellio-teal"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-dwellio-mint/30">
+                <button
+                  type="button"
+                  disabled={isRefunding}
+                  onClick={() => setRefundBooking(null)}
+                  className="px-4 py-2 border border-slate-300 font-bold text-slate-600 rounded-xl hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRefunding}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow transition disabled:opacity-50"
+                >
+                  {isRefunding ? 'Processing Refund...' : 'Confirm Refund'}
                 </button>
               </div>
             </form>

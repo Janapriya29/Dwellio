@@ -151,7 +151,25 @@ export type AuditLogAction =
   | 'DISPUTE_STATUS_CHANGED'
   | 'DISPUTE_RESOLVED'
   | 'ANNOUNCEMENT_BROADCAST'
-  | 'PLATFORM_SETTINGS_UPDATED';
+  | 'PLATFORM_SETTINGS_UPDATED'
+  | 'PAYMENT_ORDER_CREATED'
+  | 'PAYMENT_VERIFIED'
+  | 'PAYMENT_CAPTURED'
+  | 'PAYMENT_FAILED'
+  | 'BOOKING_PAYMENT_EXPIRED'
+  | 'REFUND_INITIATED'
+  | 'REFUND_COMPLETED'
+  | 'REFUND_FAILED'
+  | 'PROVIDER_LEDGER_CREDITED'
+  | 'PROVIDER_LEDGER_ADJUSTED'
+  | 'PAYOUT_BATCH_CREATED'
+  | 'PAYOUT_APPROVED'
+  | 'PAYOUT_SETTLEMENT_RECORDED'
+  | 'COUPON_CREATED'
+  | 'COUPON_UPDATED'
+  | 'COUPON_DEACTIVATED'
+  | 'COUPON_REDEEMED'
+  | 'DISPUTE_FINANCIAL_ACTION';
 
 // Pagination metadata envelope
 export interface PaginationMeta {
@@ -279,9 +297,19 @@ export interface BookingData {
   rejectionReason?: string;
   statusHistory: BookingStatusHistoryEntry[];
   priceSnapshot?: number;
-  paymentStatus?: 'unpaid' | 'paid' | 'refunded' | 'pending_verification';
+  totalPrice?: number;
+  paymentStatus?: 'unpaid' | 'paid' | 'refunded' | 'pending_verification' | 'partially_refunded' | 'failed';
   commissionRateSnapshot?: number;
   commissionAmountSnapshot?: number;
+  paymentDueAt?: string;
+  paymentCompletedAt?: string;
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  appliedCouponCode?: string;
+  discountAmount?: number;
+  finalPayableAmount?: number;
+  refundAmount?: number;
+  refundStatus?: 'none' | 'pending' | 'processed' | 'failed' | 'partially_refunded';
   hasDispute?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -683,6 +711,8 @@ export interface ResolveDisputePayload {
   status: 'under_review' | 'resolved' | 'rejected' | 'dismissed';
   adminNotes?: string;
   resolutionReason?: string;
+  financialAction?: 'none' | 'full_refund' | 'partial_refund' | 'payout_hold';
+  awardedRefundAmount?: number;
 }
 
 // 3E: Announcements & Platform Settings
@@ -754,7 +784,16 @@ export type NotificationType =
   | 'DISPUTE_RAISED'
   | 'DISPUTE_RESOLVED'
   | 'BOOKING_ADMIN_CANCELLED'
-  | 'ACCOUNT_SUSPENDED';
+  | 'ACCOUNT_SUSPENDED'
+  | 'PAYMENT_REQUIRED'
+  | 'PAYMENT_SUCCESS'
+  | 'PAYMENT_FAILED'
+  | 'PAYMENT_EXPIRED'
+  | 'REFUND_INITIATED'
+  | 'REFUND_COMPLETED'
+  | 'REFUND_FAILED'
+  | 'PAYOUT_BATCH_GENERATED'
+  | 'PAYOUT_SETTLED';
 
 export interface NotificationData {
   id: string;
@@ -774,6 +813,252 @@ export interface NotificationUnreadCountData {
 
 export interface MarkAllReadResponseData {
   markedCount: number;
+}
+
+// ----------------------------------------------------
+// Phase 4: Financial Engine Types & DTOs
+// ----------------------------------------------------
+
+export type PaymentStatus =
+  | 'created'
+  | 'authorized'
+  | 'captured'
+  | 'failed'
+  | 'partially_refunded'
+  | 'refunded';
+
+export interface PaymentData {
+  id: string;
+  bookingId: string;
+  customerId: string;
+  providerId: string;
+  razorpayOrderId: string;
+  razorpayPaymentId?: string;
+  amount: number; // in paise
+  amountInRupees: number;
+  currency: string;
+  status: PaymentStatus;
+  method?: string;
+  signatureVerified: boolean;
+  errorCode?: string;
+  errorDescription?: string;
+  refundedAmount: number; // in paise
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePaymentOrderPayload {
+  bookingId: string;
+  couponCode?: string;
+}
+
+export interface CreatePaymentOrderResponseData {
+  orderId: string;
+  amount: number; // in paise
+  currency: string;
+  keyId: string;
+  bookingId: string;
+  discountAmount: number; // in paise
+  finalPayableAmount: number; // in paise
+  businessName: string;
+  description: string;
+  customer: {
+    name: string;
+    email: string;
+    phone?: string;
+  };
+}
+
+export interface VerifyPaymentPayload {
+  bookingId: string;
+  razorpayOrderId: string;
+  razorpayPaymentId: string;
+  razorpaySignature: string;
+}
+
+export type RefundStatus = 'pending' | 'processed' | 'failed';
+
+export interface RefundData {
+  id: string;
+  paymentId: string;
+  bookingId: string;
+  razorpayRefundId?: string;
+  amount: number; // in paise
+  amountInRupees: number;
+  currency: string;
+  reason: string;
+  status: RefundStatus;
+  initiatedByRole: 'customer' | 'provider' | 'admin' | 'system';
+  initiatedByUserId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminInitiateRefundPayload {
+  amount?: number; // optional in rupees; if omitted, full refundable amount
+  reason: string;
+}
+
+export type LedgerEntryType =
+  | 'job_earning_credit'
+  | 'platform_commission_deduction'
+  | 'refund_reversal_debit'
+  | 'dispute_adjustment_debit'
+  | 'payout_batch_allocation'
+  | 'manual_adjustment';
+
+export interface ProviderLedgerEntryData {
+  id: string;
+  providerId?: string;
+  bookingId?: string;
+  paymentId?: string;
+  entryType: LedgerEntryType;
+  creditAmount?: number; // in paise
+  debitAmount?: number; // in paise
+  netAmount?: number; // in paise (credit - debit)
+  currency?: string;
+  resultingBalance?: number; // in paise
+  creditAmountRupees?: number;
+  debitAmountRupees?: number;
+  netAmountRupees?: number;
+  resultingBalanceRupees?: number;
+  status?: string;
+  description: string;
+  createdAt: string;
+}
+
+export interface ProviderEarningsSummaryData {
+  totalGrossEarningsRupees: number;
+  totalCommissionDeductedRupees: number;
+  totalNetEarningsRupees: number;
+  pendingPayoutBalanceRupees?: number;
+  settledPayoutAmountRupees?: number;
+  completedJobsCount?: number;
+  payoutMethod?: 'bank_transfer' | 'upi' | 'none';
+  payoutAccountMasked?: {
+    accountNumberMasked?: string;
+    ifsc?: string;
+    beneficiaryName?: string;
+    bankName?: string;
+    upiIdMasked?: string;
+  };
+  kycStatus?: 'pending' | 'submitted' | 'verified' | 'rejected';
+  availableBalanceRupees?: number;
+  settledAmountRupees?: number;
+  payoutAccount?: {
+    isConfigured: boolean;
+    accountType?: 'bank_account' | 'upi';
+    accountHolderName?: string;
+    bankName?: string;
+    maskedAccountNumber?: string;
+    ifscCode?: string;
+    maskedUpiId?: string;
+  };
+}
+
+export type PayoutBatchStatus = 'draft' | 'pending_approval' | 'approved' | 'settled' | 'cancelled';
+
+export interface PayoutBatchItem {
+  providerId: string;
+  providerDisplayName: string;
+  providerPhone?: string;
+  eligibleAmountRupees: number;
+  eligibleAmountPaise: number;
+  bookingIds: string[];
+  settlementStatus: 'pending' | 'settled' | 'failed';
+  settlementReference?: string;
+  settledAt?: string;
+}
+
+export interface PayoutBatchData {
+  id: string;
+  batchNumber: string;
+  periodStart: string;
+  periodEnd: string;
+  totalAmountRupees?: number;
+  totalAmountPaise?: number;
+  totalProvidersCount?: number;
+  totalProviders?: number;
+  totalGrossRupees?: number;
+  totalCommissionRupees?: number;
+  totalNetPayoutRupees?: number;
+  totalBookings?: number;
+  status: PayoutBatchStatus;
+  items?: PayoutBatchItem[];
+  generatedByAdminId?: string;
+  approvedByAdminId?: string;
+  settledAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpdateProviderPayoutAccountPayload {
+  payoutMethod?: 'bank_transfer' | 'upi';
+  accountType?: 'bank_account' | 'upi';
+  beneficiaryName?: string;
+  accountHolderName?: string;
+  accountNumber?: string;
+  ifsc?: string;
+  ifscCode?: string;
+  bankName?: string;
+  upiId?: string;
+}
+
+export type CouponDiscountType = 'percent' | 'fixed';
+
+export interface CouponData {
+  id: string;
+  code: string;
+  discountType: CouponDiscountType;
+  discountValue: number; // % (e.g. 10) or rupees (e.g. 100)
+  minOrderValueRupees: number;
+  maxDiscountAmountRupees?: number;
+  usageLimit?: number;
+  usedCount: number;
+  validFrom: string;
+  validUntil: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ValidateCouponPayload {
+  code: string;
+  serviceId?: string;
+  bookingAmountRupees: number;
+}
+
+export interface ValidateCouponResponseData {
+  valid: boolean;
+  code: string;
+  discountType: CouponDiscountType;
+  discountValue: number;
+  discountAmountRupees: number;
+  finalPayableRupees: number;
+  message?: string;
+}
+
+export interface CreateCouponPayload {
+  code: string;
+  discountType: CouponDiscountType;
+  discountValue: number;
+  minOrderValueRupees: number;
+  maxDiscountAmountRupees?: number;
+  usageLimit?: number;
+  validFrom: string;
+  validUntil: string;
+  isActive?: boolean;
+}
+
+export interface UpdateCouponPayload {
+  discountType?: CouponDiscountType;
+  discountValue?: number;
+  minOrderValueRupees?: number;
+  maxDiscountAmountRupees?: number;
+  usageLimit?: number;
+  validFrom?: string;
+  validUntil?: string;
+  isActive?: boolean;
 }
 
 
