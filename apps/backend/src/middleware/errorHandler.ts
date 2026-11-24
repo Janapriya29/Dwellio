@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { ApiResponse } from '@dwellio/shared';
 import { config } from '../config/env';
+import { logger } from '../utils/logger';
 
 /**
  * Handle 404 - Not Found for unhandled routes
@@ -20,12 +21,16 @@ export const notFoundHandler = (req: Request, res: Response): void => {
  */
 export const errorHandler = (
   err: any,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ): void => {
-  // Always log server-side diagnostics
-  console.error('[Error Handler]', err?.stack || err?.message || err);
+  // Always log server-side diagnostics safely with correlation ID
+  logger.error('Unhandled request error in Express pipeline', err, {
+    requestId: req.id || req.requestId,
+    method: req.method,
+    path: req.originalUrl,
+  });
 
   // 1. Determine HTTP status code
   let statusCode = 500;

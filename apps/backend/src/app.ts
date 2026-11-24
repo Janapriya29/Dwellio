@@ -13,13 +13,19 @@ import { notificationRouter } from './routes/notification';
 import { paymentRouter } from './routes/payment';
 import { couponRouter } from './routes/coupon';
 import { chatRouter } from './routes/chat';
+import { requestIdMiddleware } from './middleware/requestId';
+import { requestLoggingMiddleware } from './utils/logger';
 import { generalApiRateLimiter } from './middleware/rateLimiter';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
 
 export const createApp = (customRouter?: express.Router): Application => {
   const app: Application = express();
 
-  // 1. Basic security headers and banner suppression
+  // 1. Request correlation ID and structured access logging (Milestone 6B)
+  app.use(requestIdMiddleware);
+  app.use(requestLoggingMiddleware);
+
+  // 2. Basic security headers and banner suppression
   app.disable('x-powered-by');
   app.use(
     helmet({
@@ -32,7 +38,7 @@ export const createApp = (customRouter?: express.Router): Application => {
     })
   );
 
-  // 2. CORS configuration
+  // 3. CORS configuration
   app.use(
     cors({
       origin: config.clientUrl,
@@ -40,7 +46,7 @@ export const createApp = (customRouter?: express.Router): Application => {
     })
   );
 
-  // 3. Explicit request body size limits (15kb cap) with raw body preservation for webhooks (Phase 4A)
+  // 4. Explicit request body size limits (15kb cap) with raw body preservation for webhooks (Phase 4A)
   app.use(
     express.json({
       limit: '15kb',
@@ -51,7 +57,7 @@ export const createApp = (customRouter?: express.Router): Application => {
   );
   app.use(express.urlencoded({ extended: true, limit: '15kb' }));
 
-  // 4. General API Rate Limiter across /api (automatically preserves health checks)
+  // 5. General API Rate Limiter across /api (automatically preserves health checks)
   app.use('/api', generalApiRateLimiter);
 
   // API Routes

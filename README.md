@@ -1,8 +1,10 @@
 # Dwellio
 
 > **Your Home, in Good Hands.**
+> *Production-Ready Full-Stack Home Services Platform (Version 1.0)*
+> 📄 **[Release Notes v1.0](RELEASE_NOTES_V1.0.md)** | 📖 **[Production Deployment Runbook](DEPLOYMENT.md)**
 
-Dwellio is a modern full-stack home-services platform that connects homeowners with admin-approved service professionals (electricians, plumbers, painters, AC repair, and appliance technicians).
+Dwellio is an enterprise-grade full-stack home-services platform connecting homeowners with vetted, admin-approved service professionals (electricians, plumbers, painters, AC repair, and appliance technicians). Featuring real-time Socket.IO messaging, BullMQ background lifecycle workers, an escrow-backed double-entry financial ledger, and hardened production observability.
 
 ---
 
@@ -85,10 +87,14 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
-### 6. Health & Verification Endpoints
+### 6. Health & Observability Endpoints
 * **Frontend Home**: [http://localhost:5173](http://localhost:5173)
-* **General API Health**: [http://localhost:5000/api/health](http://localhost:5000/api/health)
-* **Database Readiness**: [http://localhost:5000/api/health/db](http://localhost:5000/api/health/db) (returns HTTP 200 when connected, HTTP 503 if disconnected)
+* **General API Health**: `GET /api/health`
+* **Process Liveness Probe**: `GET /api/health/liveness` (returns 200 `{ status: "ok" }`)
+* **Service Readiness Probe**: `GET /api/health/readiness` (returns 200 `{ status: "ready" }` if MongoDB and Redis are healthy, 503 otherwise)
+* **Database Health**: `GET /api/health/db` (returns 200 `{ status: "ok" }` if connected, 503 if disconnected)
+* **Redis Health**: `GET /api/health/redis` (returns 200 `{ status: "ok" }` if Redis responds to PING, 503 if unavailable)
+* **Distributed Tracing**: All API responses include `X-Request-Id` (propagating client header or assigning a UUID v4).
 
 ### 7. Authentication Endpoints (Phase 3)
 * **Register Customer**: `POST /api/auth/register` (body: `{ name, email, password }`)
@@ -164,6 +170,26 @@ npm run docker:down
 ```
 > [!IMPORTANT]
 > The persistent database is stored in the Docker named volume `dwellio_mongodb_data`. Do **not** use `docker compose down -v` unless you intentionally wish to delete all persistent database records.
+
+### 6. Production Deployment & Orchestration
+For hardened production deployments, use `docker-compose.prod.yml`, which isolates MongoDB and Redis within an internal Docker network (no ports exposed to the host) and configures explicit resource limits and restart policies.
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+See the complete production guide in **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
+### 7. Database Backups & Disaster Recovery
+Production backup and safe restoration scripts are located in `scripts/`:
+* **Create Backup**:
+  ```bash
+  bash scripts/backup-db.sh
+  ```
+  Generates a timestamped, gzip-compressed archive in `backups/dwellio_backup_YYYYMMDD_HHMMSS.archive.gz`.
+* **Restore Database**:
+  ```bash
+  bash scripts/restore-db.sh backups/<archive-file>.archive.gz --db dwellio --confirm
+  ```
+  Includes guardrails preventing accidental overwrite of production databases unless `--force-production-restore` is supplied.
 
 ---
 

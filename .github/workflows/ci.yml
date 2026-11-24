@@ -25,6 +25,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -53,7 +62,16 @@ jobs:
           NODE_ENV: test
           MONGO_URI: mongodb://localhost:27017/dwellio_ci_test
           JWT_SECRET: dwellio_ci_test_jwt_secret_key_minimum_32_bytes_long
+          REDIS_TEST_URL: redis://localhost:6379
+          REDIS_URL: redis://localhost:6379
         run: npm test
+
+      - name: Run real Redis & BullMQ integration test suite
+        env:
+          NODE_ENV: test
+          REDIS_TEST_URL: redis://localhost:6379
+          REDIS_URL: redis://localhost:6379
+        run: npm run test:redis-integration
 
       - name: Run end-to-end deployment smoke tests
         env:
@@ -61,3 +79,10 @@ jobs:
           MONGO_URI: mongodb://localhost:27017/dwellio_ci_e2e_test
           JWT_SECRET: dwellio_ci_test_jwt_secret_key_minimum_32_bytes_long
         run: npm run test:e2e:smoke
+
+      - name: Run full user journeys end-to-end tests
+        env:
+          NODE_ENV: test
+          MONGO_URI: mongodb://localhost:27017/dwellio_ci_journeys_test
+          JWT_SECRET: dwellio_ci_test_jwt_secret_key_minimum_32_bytes_long
+        run: npm run test:e2e:journeys

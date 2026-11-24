@@ -37,47 +37,65 @@ const startServer = async (): Promise<void> => {
       console.log(`===============================================`);
     });
 
-    // 4. Handle graceful shutdown
+    // 4. Handle graceful shutdown and process lifecycle safety (Milestone 6A.4)
     let isShuttingDown = false;
-    const handleShutdown = async (signal: string) => {
+    const handleShutdown = async (signal: string, exitCode: number = 0) => {
       if (isShuttingDown) return;
       isShuttingDown = true;
 
-      console.log(`\nReceived ${signal}. Starting graceful shutdown...`);
-
-      // Close all live notification streams
-      notificationStreamService.closeAllClients();
-
-      // Close Socket.IO
-      await socketService.close().catch((e) => console.warn('[Shutdown] Error closing Socket.IO:', e));
-
-      // Close BullMQ queues
-      await queueService.closeQueues().catch((e) => console.warn('[Shutdown] Error closing Queues:', e));
-
-      // Close Redis connections
-      await redisService.closeRedisConnections().catch((e) => console.warn('[Shutdown] Error closing Redis:', e));
-
-      server.close(async () => {
-        console.log('[Shutdown] HTTP server closed.');
-        try {
-          await disconnectDatabase();
-          console.log('[Shutdown] Graceful shutdown completed.');
-          process.exit(0);
-        } catch (dbError) {
-          console.error('[Shutdown Error] Failed to close database cleanly:', dbError);
-          process.exit(1);
-        }
-      });
+      console.log(`\n[Process] Received ${signal}. Initiating graceful shutdown...`);
 
       // Force terminate after 10s if graceful shutdown hangs
-      setTimeout(() => {
-        console.error('[Shutdown Error] Graceful shutdown timed out. Forcing exit.');
+      const forceExitTimer = setTimeout(() => {
+        console.error('[Shutdown Error] Graceful shutdown timed out (10s limit). Forcing exit.');
         process.exit(1);
-      }, 10000).unref();
+      }, 10000);
+      if (typeof forceExitTimer.unref === 'function') {
+        forceExitTimer.unref();
+      }
+
+      try {
+        // Stop accepting new HTTP requests
+        server.close(async () => {
+          console.log('[Shutdown] HTTP server stopped accepting connections.');
+        });
+
+        // Close all live notification SSE streams
+        notificationStreamService.closeAllClients();
+
+        // Close Socket.IO server
+        await socketService.close().catch((e) => console.warn('[Shutdown] Error closing Socket.IO:', e?.message || e));
+
+        // Close BullMQ queue handles
+        await queueService.closeQueues().catch((e) => console.warn('[Shutdown] Error closing Queues:', e?.message || e));
+
+        // Close Redis connections
+        await redisService.closeRedisConnections().catch((e) => console.warn('[Shutdown] Error closing Redis:', e?.message || e));
+
+        // Disconnect MongoDB cleanly
+        await disconnectDatabase();
+        console.log('[Shutdown] Graceful shutdown completed cleanly.');
+        process.exit(exitCode);
+      } catch (err: any) {
+        console.error('[Shutdown Error] Fatal error during shutdown sequence:', err?.message || err);
+        process.exit(1);
+      }
     };
 
-    process.on('SIGINT', () => handleShutdown('SIGINT'));
-    process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+    // Process signal handlers
+    process.on('SIGINT', () => handleShutdown('SIGINT', 0));
+    process.on('SIGTERM', () => handleShutdown('SIGTERM', 0));
+
+    // Process exception & unhandled rejection handlers
+    process.on('uncaughtException', (err: Error) => {
+      console.error('[Process Fatal] Uncaught Exception:', err?.stack || err?.message || err);
+      handleShutdown('uncaughtException', 1);
+    });
+
+    process.on('unhandledRejection', (reason: any) => {
+      console.error('[Process Fatal] Unhandled Promise Rejection:', reason?.stack || reason?.message || reason);
+      handleShutdown('unhandledRejection', 1);
+    });
   } catch (error) {
     console.error('[Startup Failure] Failed to start Dwellio backend:', error);
     process.exit(1);

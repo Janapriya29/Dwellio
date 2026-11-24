@@ -1,0 +1,164 @@
+# ==============================================================================
+# Dwellio Production Docker Compose Configuration (Version 1.0)
+# ==============================================================================
+# Hardened multi-container production stack:
+# - MongoDB and Redis internal network isolation (no public host ports exposed)
+# - Dedicated background BullMQ worker container
+# - Nginx reverse-proxy routing SPA, /api, /socket.io, and SSE
+# - Persistent volumes for MongoDB and Redis (AOF)
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml up -d
+# ==============================================================================
+
+name: dwellio-prod
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. MongoDB Database (Internal Only)
+  # ----------------------------------------------------------------------------
+  mongodb:
+    image: mongo:7.0
+    container_name: dwellio-prod-mongodb
+    restart: always
+    volumes:
+      - mongodb_prod_data:/data/db
+    networks:
+      - dwellio-prod-network
+    # In production, NO host ports are exposed. Accessible only within dwellio-prod-network.
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ----------------------------------------------------------------------------
+  # 2. Redis Message Broker & Cache (Internal Only)
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7.2-alpine
+    container_name: dwellio-prod-redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis_prod_data:/data
+    networks:
+      - dwellio-prod-network
+    # In production, NO host ports are exposed. Accessible only within dwellio-prod-network.
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ----------------------------------------------------------------------------
+  # 3. Dwellio Backend API & Socket.IO Service
+  # ----------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: dwellio-prod-backend
+    restart: always
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - CLIENT_URL=${CLIENT_URL}
+      - MONGO_URI=mongodb://mongodb:27017/dwellio
+      - MONGODB_MAX_POOL_SIZE=50
+      - MONGODB_MIN_POOL_SIZE=5
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET}
+      - RAZORPAY_MODE=${RAZORPAY_MODE:-test}
+      - RAZORPAY_LIVE_ENABLED=${RAZORPAY_LIVE_ENABLED:-false}
+      - API_RATE_LIMIT_MAX=500
+      - AUTH_RATE_LIMIT_MAX=30
+      - NOTIFICATION_RATE_LIMIT_MAX=150
+      - BOOKING_RATE_LIMIT_MAX=15
+      - CATALOG_RATE_LIMIT_MAX=200
+    networks:
+      - dwellio-prod-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ----------------------------------------------------------------------------
+  # 4. Dedicated Background BullMQ Worker Service
+  # ----------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: dwellio-prod-worker
+    restart: always
+    command: ["node", "apps/backend/dist/worker.js"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/dwellio
+      - MONGODB_MAX_POOL_SIZE=20
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=7d
+    networks:
+      - dwellio-prod-network
+
+  # ----------------------------------------------------------------------------
+  # 5. Dwellio Frontend SPA & Nginx Reverse Proxy
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    container_name: dwellio-prod-frontend
+    restart: always
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    networks:
+      - dwellio-prod-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+# ------------------------------------------------------------------------------
+# Persistent Storage Volumes
+# ------------------------------------------------------------------------------
+volumes:
+  mongodb_prod_data:
+    name: dwellio_mongodb_prod_data
+  redis_prod_data:
+    name: dwellio_redis_prod_data
+
+# ------------------------------------------------------------------------------
+# Isolated Bridge Network
+# ------------------------------------------------------------------------------
+networks:
+  dwellio-prod-network:
+    name: dwellio-prod-network
+    driver: bridge

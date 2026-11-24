@@ -1,16 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { HouseRoom } from '@dwellio/shared';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LandingPage } from './pages/LandingPage';
-import { ServiceDiscoveryPage } from './pages/ServiceDiscoveryPage';
-import { MyBookingsView } from './components/booking/MyBookingsView';
-import { ProviderPortalView } from './components/booking/ProviderPortalView';
-import { AdminDashboardLayout } from './components/admin/AdminDashboardLayout';
 import { NotificationBell } from './components/notification/NotificationBell';
 import { AuthModal, AuthModalMode } from './components/auth/AuthModal';
 import { CustomerProfileModal } from './components/account/CustomerProfileModal';
 import { ProviderProfileModal } from './components/provider/ProviderProfileModal';
 import { MobileBottomNav } from './components/navigation/MobileBottomNav';
+
+// Code-split heavy secondary views (Milestone 6B.4)
+const ServiceDiscoveryPage = lazy(() =>
+  import('./pages/ServiceDiscoveryPage').then((m) => ({ default: m.ServiceDiscoveryPage }))
+);
+const MyBookingsView = lazy(() =>
+  import('./components/booking/MyBookingsView').then((m) => ({ default: m.MyBookingsView }))
+);
+const ProviderPortalView = lazy(() =>
+  import('./components/booking/ProviderPortalView').then((m) => ({ default: m.ProviderPortalView }))
+);
+const AdminDashboardLayout = lazy(() =>
+  import('./components/admin/AdminDashboardLayout').then((m) => ({ default: m.AdminDashboardLayout }))
+);
+
+const ViewLoadingFallback: React.FC = () => (
+  <div className="flex-1 flex flex-col items-center justify-center min-h-[50vh] p-8 text-dwellio-teal/60">
+    <div className="w-8 h-8 border-3 border-dwellio-teal border-t-transparent rounded-full animate-spin mb-3" />
+    <p className="text-xs font-medium tracking-wide">Loading view...</p>
+  </div>
+);
 
 export type AppTab = 'landing' | 'discover' | 'my-bookings' | 'provider-portal' | 'admin-dashboard';
 
@@ -346,28 +364,30 @@ const MainLayout: React.FC = () => {
           />
         )}
 
-        {activeTab === 'discover' && (
-          <ServiceDiscoveryPage
-            initialRoom={selectedRoom}
-            onRequireAuth={() => openAuth('login', 'discover')}
-          />
-        )}
+        <Suspense fallback={<ViewLoadingFallback />}>
+          {activeTab === 'discover' && (
+            <ServiceDiscoveryPage
+              initialRoom={selectedRoom}
+              onRequireAuth={() => openAuth('login', 'discover')}
+            />
+          )}
 
-        {activeTab === 'my-bookings' && (
-          <MyBookingsView
-            onExploreServices={() => setActiveTab('discover')}
-            onOpenLogin={() => openAuth('login', 'my-bookings')}
-          />
-        )}
+          {activeTab === 'my-bookings' && (
+            <MyBookingsView
+              onExploreServices={() => setActiveTab('discover')}
+              onOpenLogin={() => openAuth('login', 'my-bookings')}
+            />
+          )}
 
-        {activeTab === 'provider-portal' && (
-          <ProviderPortalView
-            onOpenLogin={() => openAuth('login', 'provider-portal')}
-            onOpenApply={() => openAuth('apply-provider')}
-          />
-        )}
+          {activeTab === 'provider-portal' && (
+            <ProviderPortalView
+              onOpenLogin={() => openAuth('login', 'provider-portal')}
+              onOpenApply={() => openAuth('apply-provider')}
+            />
+          )}
 
-        {activeTab === 'admin-dashboard' && <AdminDashboardLayout />}
+          {activeTab === 'admin-dashboard' && <AdminDashboardLayout />}
+        </Suspense>
       </main>
 
       {/* Authentication Modal */}
@@ -568,9 +588,11 @@ const MainLayout: React.FC = () => {
 
 export const App: React.FC = () => {
   return (
-    <AuthProvider>
-      <MainLayout />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <MainLayout />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 };
 

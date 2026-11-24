@@ -35,29 +35,50 @@ const startWorkerProcess = async (): Promise<void> => {
     await workerSupervisor.start();
     console.log('[Worker] Dedicated worker process is active and processing queues.');
 
-    // 6. Graceful shutdown handler
+    // 6. Graceful shutdown handler and process lifecycle safety (Milestone 6A.4)
     let isShuttingDown = false;
-    const handleShutdown = async (signal: string) => {
+    const handleShutdown = async (signal: string, exitCode: number = 0) => {
       if (isShuttingDown) return;
       isShuttingDown = true;
 
       console.log(`\n[Worker] Received ${signal}. Draining jobs and shutting down...`);
 
+      // Force terminate after 10s if graceful shutdown hangs
+      const forceExitTimer = setTimeout(() => {
+        console.error('[Worker Shutdown Error] Graceful shutdown timed out (10s limit). Forcing exit.');
+        process.exit(1);
+      }, 10000);
+      if (typeof forceExitTimer.unref === 'function') {
+        forceExitTimer.unref();
+      }
+
       try {
-        await workerSupervisor.close();
-        await queueService.closeQueues();
-        await redisService.closeRedisConnections();
-        await disconnectDatabase();
-        console.log('[Worker] Graceful shutdown completed.');
-        process.exit(0);
-      } catch (err) {
-        console.error('[Worker Shutdown Error]:', err);
+        await workerSupervisor.close().catch((e) => console.warn('[Worker] Error closing workers:', e?.message || e));
+        await queueService.closeQueues().catch((e) => console.warn('[Worker] Error closing queues:', e?.message || e));
+        await redisService.closeRedisConnections().catch((e) => console.warn('[Worker] Error closing Redis:', e?.message || e));
+        await disconnectDatabase().catch((e) => console.warn('[Worker] Error closing DB:', e?.message || e));
+        console.log('[Worker] Graceful shutdown completed cleanly.');
+        process.exit(exitCode);
+      } catch (err: any) {
+        console.error('[Worker Shutdown Error]:', err?.message || err);
         process.exit(1);
       }
     };
 
-    process.on('SIGINT', () => handleShutdown('SIGINT'));
-    process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+    // Process signal handlers
+    process.on('SIGINT', () => handleShutdown('SIGINT', 0));
+    process.on('SIGTERM', () => handleShutdown('SIGTERM', 0));
+
+    // Process exception & unhandled rejection handlers
+    process.on('uncaughtException', (err: Error) => {
+      console.error('[Worker Fatal] Uncaught Exception:', err?.stack || err?.message || err);
+      handleShutdown('uncaughtException', 1);
+    });
+
+    process.on('unhandledRejection', (reason: any) => {
+      console.error('[Worker Fatal] Unhandled Promise Rejection:', reason?.stack || reason?.message || reason);
+      handleShutdown('unhandledRejection', 1);
+    });
   } catch (error) {
     console.error('[Worker Fatal Error]:', error);
     process.exit(1);
