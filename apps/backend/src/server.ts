@@ -1,7 +1,11 @@
+import http from 'http';
 import { createApp } from './app';
 import { config, validateConfig } from './config/env';
 import { connectDatabase, disconnectDatabase, sanitizeMongoUri } from './config/db';
 import { notificationStreamService } from './services/notificationStream';
+import { socketService } from './services/socketService';
+import { redisService } from './services/redisService';
+import { queueService } from './services/queueService';
 
 const startServer = async (): Promise<void> => {
   try {
@@ -12,12 +16,16 @@ const startServer = async (): Promise<void> => {
     console.log('[Startup] Initializing MongoDB connection...');
     await connectDatabase();
 
-    // 3. Start Express HTTP server
+    // 3. Start Express HTTP server & Socket.IO
     const app = createApp();
+    const server = http.createServer(app);
 
-    const server = app.listen(config.port, () => {
+    // Initialize Socket.IO with HTTP server
+    socketService.init(server);
+
+    server.listen(config.port, () => {
       console.log(`===============================================`);
-      console.log(` Dwellio Backend Service (Phase 2)`);
+      console.log(` Dwellio Backend Service (Phase 5)`);
       console.log(` Tagline: Your Home, in Good Hands.`);
       console.log(` Environment : ${config.nodeEnv}`);
       console.log(` Port        : ${config.port}`);
@@ -25,6 +33,7 @@ const startServer = async (): Promise<void> => {
       console.log(` DB Health   : http://localhost:${config.port}/api/health/db`);
       console.log(` CORS Origin : ${config.clientUrl}`);
       console.log(` Database    : ${sanitizeMongoUri(config.mongoUri)}`);
+      console.log(` Redis State : ${config.redisEnabled ? 'Enabled' : 'Disabled'}`);
       console.log(`===============================================`);
     });
 
@@ -38,6 +47,15 @@ const startServer = async (): Promise<void> => {
 
       // Close all live notification streams
       notificationStreamService.closeAllClients();
+
+      // Close Socket.IO
+      await socketService.close().catch((e) => console.warn('[Shutdown] Error closing Socket.IO:', e));
+
+      // Close BullMQ queues
+      await queueService.closeQueues().catch((e) => console.warn('[Shutdown] Error closing Queues:', e));
+
+      // Close Redis connections
+      await redisService.closeRedisConnections().catch((e) => console.warn('[Shutdown] Error closing Redis:', e));
 
       server.close(async () => {
         console.log('[Shutdown] HTTP server closed.');

@@ -12,6 +12,7 @@ import { User } from '../models/User';
 import { ProviderProfile } from '../models/ProviderProfile';
 import { AuditLog } from '../models/AuditLog';
 import { formatBookingDto, releaseProviderSlots } from '../utils/booking';
+import { queueService } from '../services/queueService';
 import { sendInAppNotification } from '../utils/notification';
 import { sendInternalError } from '../utils/security';
 
@@ -241,6 +242,16 @@ export const adminCancelBooking = async (req: Request, res: Response): Promise<v
 
     // Concurrency-safe release of any held slot reservations
     await releaseProviderSlots(booking._id).catch(() => {});
+
+    // Cancel appointment reminders (Milestone 5C)
+    queueService.cancelBookingReminders(booking._id.toString()).catch(() => {});
+
+    // Lock associated conversation upon cancellation (Phase 5 Remediation)
+    const { Conversation } = await import('../models/Conversation');
+    await Conversation.findOneAndUpdate(
+      { bookingId: booking._id },
+      { $set: { status: 'locked', lockedAt: new Date(), lockReason: 'Booking cancelled by administrator' } }
+    ).catch(() => {});
 
     // Release coupon reservation if any
     const { couponService } = await import('../services/couponService');

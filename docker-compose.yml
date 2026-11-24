@@ -24,7 +24,28 @@ services:
       start_period: 10s
 
   # ============================================================================
-  # 2. Dwellio Backend API Service (Express + TypeScript + Node.js)
+  # 2. Redis In-Memory Cache & BullMQ Message Broker (Phase 5)
+  # ============================================================================
+  redis:
+    image: redis:7.2-alpine
+    container_name: dwellio-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-dwellio_redis_dev_secret}"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - dwellio-network
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-dwellio_redis_dev_secret}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  # ============================================================================
+  # 3. Dwellio Backend API Service (Express + TypeScript + Node.js)
   # ============================================================================
   backend:
     build:
@@ -35,11 +56,15 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       - PORT=5000
       - NODE_ENV=production
       - CLIENT_URL=${CLIENT_URL:-http://localhost}
       - MONGO_URI=mongodb://mongodb:27017/dwellio
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-dwellio_redis_dev_secret}@redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-dwellio_redis_dev_secret}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=7d
       - API_RATE_LIMIT_MAX=500
@@ -60,7 +85,32 @@ services:
       start_period: 15s
 
   # ============================================================================
-  # 3. Dwellio Frontend Service (React + Vite + Nginx Reverse Proxy)
+  # 4. Dwellio Background Worker Service (BullMQ Supervisor - Phase 5)
+  # ============================================================================
+  worker:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: dwellio-worker
+    restart: unless-stopped
+    command: ["node", "apps/backend/dist/worker.js"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/dwellio
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-dwellio_redis_dev_secret}@redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-dwellio_redis_dev_secret}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=7d
+    networks:
+      - dwellio-network
+
+  # ============================================================================
+  # 5. Dwellio Frontend Service (React + Vite + Nginx Reverse Proxy)
   # ============================================================================
   frontend:
     build:
@@ -88,6 +138,8 @@ services:
 volumes:
   mongodb_data:
     name: dwellio_mongodb_data
+  redis_data:
+    name: dwellio_redis_data
 
 # ==============================================================================
 # Internal Bridge Network

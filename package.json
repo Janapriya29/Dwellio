@@ -20,6 +20,7 @@
     "test:e2e": "playwright test",
     "test:e2e:smoke": "vitest run tests/e2e/smoke.test.ts",
     "test:e2e:journeys": "vitest run tests/e2e/userJourneys.test.ts",
+    "test:redis-integration": "npm run test:redis-integration --workspace=apps/backend",
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",

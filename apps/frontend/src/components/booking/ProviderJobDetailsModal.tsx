@@ -7,6 +7,7 @@ import {
   updateProviderBookingStatus,
   cancelProviderBooking,
 } from '../../services/bookingService';
+import { BookingChatDrawer } from '../chat/BookingChatDrawer';
 
 export interface ProviderJobDetailsModalProps {
   booking: BookingData | null;
@@ -42,9 +43,10 @@ export const ProviderJobDetailsModal: React.FC<ProviderJobDetailsModalProps> = (
   onClose,
   onStatusUpdated,
 }) => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Cancellation dialog state
   const [showCancelDialog, setShowCancelDialog] = useState(false);
@@ -450,7 +452,15 @@ export const ProviderJobDetailsModal: React.FC<ProviderJobDetailsModalProps> = (
 
         {/* Action Footer */}
         <div className="px-6 py-4 bg-dwellio-ivory border-t border-dwellio-mint/40 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
-          <div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsChatOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 font-bold text-xs transition flex items-center gap-1.5"
+            >
+              <span>💬</span>
+              <span>Chat with Customer</span>
+            </button>
             {['accepted', 'on_the_way', 'in_progress'].includes(booking.status) && !showCancelDialog && (
               <button
                 type="button"
@@ -529,6 +539,20 @@ export const ProviderJobDetailsModal: React.FC<ProviderJobDetailsModalProps> = (
           </div>
         </div>
       </div>
+
+      {/* Real-time Customer Messaging Drawer (Milestone 5B) */}
+      {isChatOpen && (
+        <BookingChatDrawer
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          bookingId={booking.id}
+          token={token || ''}
+          currentUserId={user?.id || ''}
+          bookingTitle={booking.service?.name || 'Service Job'}
+          counterpartName={booking.customer?.name || 'Customer'}
+          counterpartRole="customer"
+        />
+      )}
     </div>
   );
 };

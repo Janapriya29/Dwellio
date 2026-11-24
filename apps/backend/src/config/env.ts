@@ -16,6 +16,12 @@ export interface AppConfig {
   razorpayWebhookSecret: string;
   razorpayMode: 'test' | 'live';
   razorpayRouteEnabled: boolean;
+  redisUrl?: string;
+  redisHost: string;
+  redisPort: number;
+  redisPassword?: string;
+  redisTls: boolean;
+  redisEnabled: boolean;
 }
 
 const getEnvNumber = (key: string, defaultValue: number): number => {
@@ -52,6 +58,12 @@ export const config: AppConfig = {
   razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || 'rzp_test_placeholder_webhook_secret',
   razorpayMode: (process.env.RAZORPAY_MODE === 'live' ? 'live' : 'test') as 'test' | 'live',
   razorpayRouteEnabled: process.env.RAZORPAY_ROUTE_ENABLED === 'true',
+  redisUrl: process.env.REDIS_URL,
+  redisHost: process.env.REDIS_HOST || '127.0.0.1',
+  redisPort: getEnvNumber('REDIS_PORT', 6379),
+  redisPassword: process.env.REDIS_PASSWORD || undefined,
+  redisTls: process.env.REDIS_TLS === 'true',
+  redisEnabled: process.env.REDIS_ENABLED !== 'false',
 };
 
 // Validate critical configurations

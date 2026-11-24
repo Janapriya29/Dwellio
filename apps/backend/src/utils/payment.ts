@@ -4,6 +4,7 @@ import { Payment } from '../models/Payment';
 import { Refund, IRefund } from '../models/Refund';
 import { AuditLog } from '../models/AuditLog';
 import { razorpayService } from '../services/razorpayService';
+import { queueService } from '../services/queueService';
 import { sendInAppNotification } from './notification';
 
 /**
@@ -370,6 +371,13 @@ export const reconcilePaymentCapture = async (
 
   // Atomically redeem reserved coupon
   await couponService.redeemCoupon(booking._id).catch(() => {});
+
+  // Schedule delayed background reminders (Milestone 5C)
+  if (updatedBooking?.scheduledStartTime) {
+    queueService
+      .scheduleBookingReminders(booking._id.toString(), updatedBooking.scheduledStartTime)
+      .catch((err) => console.warn('[Payment] Warning scheduling reminders:', err.message));
+  }
 
   // Audit logs
   await Promise.allSettled([

@@ -61,6 +61,13 @@ export class FinancialBackgroundWorker {
           // 2. Release reserved coupon
           await couponService.releaseCouponReservation(booking._id, 'Payment window expired').catch(() => {});
 
+          // Lock associated conversation (Phase 5 Remediation)
+          const { Conversation } = await import('../models/Conversation');
+          await Conversation.findOneAndUpdate(
+            { bookingId: booking._id },
+            { $set: { status: 'locked', lockedAt: now, lockReason: 'Auto-cancelled: Payment deadline expired' } }
+          ).catch(() => {});
+
           // 3. Record AuditLog
           await new AuditLog({
             adminId: booking.customerId._id || booking.customerId,

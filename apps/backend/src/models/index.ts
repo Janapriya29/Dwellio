@@ -17,3 +17,5 @@ export * from './ProviderLedger';
 export * from './PayoutBatch';
 export * from './Coupon';
 export * from './CouponRedemption';
+export * from './Conversation';
+export * from './Message';

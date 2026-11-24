@@ -16,6 +16,8 @@ import {
 } from '../utils/booking';
 import { sendInAppNotification } from '../utils/notification';
 import { sendInternalError } from '../utils/security';
+import { queueService } from '../services/queueService';
+import { Conversation } from '../models/Conversation';
 
 /**
  * Valid allowed status transitions for service providers
@@ -365,6 +367,15 @@ export const rejectBooking = async (req: Request, res: Response): Promise<void> 
     // Release any associated slot reservations if present
     await releaseProviderSlots(booking._id);
 
+    // Cancel appointment reminders (Milestone 5C)
+    queueService.cancelBookingReminders(booking._id.toString()).catch(() => {});
+
+    // Lock associated conversation upon rejection (Phase 5 Remediation)
+    Conversation.findOneAndUpdate(
+      { bookingId: booking._id },
+      { $set: { status: 'locked', lockedAt: new Date(), lockReason: 'Booking declined by service professional' } }
+    ).catch(() => {});
+
     // Trigger in-app notification to customer (best-effort, non-blocking)
     const providerName = (updated.providerId as any)?.displayName || req.providerProfile.displayName || 'The service professional';
     const safeReason = rejectionText.slice(0, 150);
@@ -524,7 +535,17 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
         bookingId: booking._id,
         dedupKey: `booking:${booking._id}:completed`,
       });
+
+      // Schedule conversation auto-lock 48h after completion (Milestone 5C)
+      Conversation.findOne({ bookingId: updated._id }).then((conv) => {
+        if (conv) {
+          queueService.scheduleConversationAutoLock(conv._id.toString(), updated._id.toString(), new Date()).catch(() => {});
+        }
+      }).catch(() => {});
     } else if (targetStatus === 'cancelled') {
+      // Cancel appointment reminders (Milestone 5C)
+      queueService.cancelBookingReminders(booking._id.toString()).catch(() => {});
+
       const safeReason = statusReasonText.slice(0, 150);
       await sendInAppNotification({
         recipientId: booking.customerId,
@@ -637,6 +658,15 @@ export const cancelBookingByProvider = async (req: Request, res: Response): Prom
 
     // Release any associated slot reservations
     await releaseProviderSlots(booking._id);
+
+    // Cancel appointment reminders (Milestone 5C)
+    queueService.cancelBookingReminders(booking._id.toString()).catch(() => {});
+
+    // Lock associated conversation upon cancellation (Phase 5 Remediation)
+    Conversation.findOneAndUpdate(
+      { bookingId: booking._id },
+      { $set: { status: 'locked', lockedAt: new Date(), lockReason: 'Booking cancelled by provider' } }
+    ).catch(() => {});
 
     // Release coupon reservation if any
     const { couponService } = await import('../services/couponService');

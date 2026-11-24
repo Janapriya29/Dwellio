@@ -64,6 +64,7 @@ import {
 } from '../controllers/adminSettings';
 import { listAdminReviews, moderateReview } from '../controllers/adminReview';
 import { listAuditLogs } from '../controllers/adminAudit';
+import { getAdminQueueMetrics } from '../controllers/adminQueueController';
 import { requireAuth, requireRole } from '../middleware/auth';
 
 export const adminRouter = Router();
@@ -165,3 +166,8 @@ adminRouter.patch('/admin/reviews/:id/moderate', moderateReview);
 // 10. Audit Logs
 // ----------------------------------------------------
 adminRouter.get('/admin/audit-logs', listAuditLogs);
+
+// ----------------------------------------------------
+// 11. BullMQ Queue Health & System Processing (Milestone 5D)
+// ----------------------------------------------------
+adminRouter.get('/admin/system/queues', getAdminQueueMetrics);

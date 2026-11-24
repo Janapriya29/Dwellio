@@ -17,6 +17,7 @@ import {
 } from '../utils/booking';
 import { sendInAppNotification } from '../utils/notification';
 import { sendInternalError } from '../utils/security';
+import { queueService } from '../services/queueService';
 
 const MIN_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
@@ -434,6 +435,16 @@ export const cancelCustomerBooking = async (req: Request, res: Response): Promis
     // Release slot reservations when customer cancels booking
     await releaseProviderSlots(booking._id);
 
+    // Cancel appointment reminders (Milestone 5C)
+    queueService.cancelBookingReminders(booking._id.toString()).catch(() => {});
+
+    // Lock associated conversation upon cancellation (Phase 5 Remediation)
+    const { Conversation } = await import('../models/Conversation');
+    await Conversation.findOneAndUpdate(
+      { bookingId: booking._id },
+      { $set: { status: 'locked', lockedAt: new Date(), lockReason: 'Booking cancelled by customer' } }
+    ).catch(() => {});
+
     // Release coupon reservation if any
     const { couponService } = await import('../services/couponService');
     await couponService.releaseCouponReservation(booking._id, 'Booking cancelled by customer').catch(() => {});
@@ -696,6 +707,12 @@ export const rescheduleCustomerBooking = async (req: Request, res: Response): Pr
     // Cleanup obsolete slots now that the booking schedule is safely committed
     if (isAccepted) {
       await cleanupObsoleteSlots(booking._id, oldStart, oldEnd, start, end);
+    }
+
+    // Reschedule background appointment reminders (Milestone 5C)
+    queueService.cancelBookingReminders(booking._id.toString()).catch(() => {});
+    if (updated.paymentStatus === 'paid') {
+      queueService.scheduleBookingReminders(booking._id.toString(), start).catch(() => {});
     }
 
     // Notify provider (best effort)

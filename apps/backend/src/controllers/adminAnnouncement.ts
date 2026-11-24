@@ -11,6 +11,7 @@ import { User } from '../models/User';
 import { AuditLog } from '../models/AuditLog';
 import { sendInAppNotification } from '../utils/notification';
 import { sendInternalError } from '../utils/security';
+import { queueService } from '../services/queueService';
 
 const formatAnnouncementDto = (a: any): AnnouncementData => {
   const adminDoc = a.createdByAdminId;
@@ -213,10 +214,26 @@ export const createAnnouncement = async (req: Request, res: Response): Promise<v
       }).save().catch(() => {});
     }
 
-    // Launch bounded asynchronous batched delivery
-    setImmediate(() => {
-      deliverAnnouncementBatched(announcement._id).catch(() => {});
-    });
+    // Launch durable BullMQ batched delivery
+    if (recipientCount === 0) {
+      announcement.deliveryStatus = 'delivered';
+      await announcement.save();
+    } else {
+      announcement.deliveryStatus = 'processing';
+      await announcement.save();
+
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < targetUsers.length; i += BATCH_SIZE) {
+        const batch = targetUsers.slice(i, i + BATCH_SIZE);
+        await queueService.enqueueAnnouncementBatch({
+          announcementId: announcement._id.toString(),
+          recipientUserIds: batch.map((u) => u._id.toString()),
+          title: announcement.title,
+          message: announcement.message,
+          batchIndex: Math.floor(i / BATCH_SIZE),
+        });
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -262,15 +279,47 @@ export const retryAnnouncementDelivery = async (req: Request, res: Response): Pr
       return;
     }
 
-    // Reset failed count and re-trigger delivery
+    // Determine remaining undelivered recipients
+    const userFilter: Record<string, unknown> = { isActive: true };
+    if (announcement.audience === 'customers') {
+      userFilter.role = 'customer';
+    } else if (announcement.audience === 'providers') {
+      userFilter.role = 'provider';
+    }
+    if (announcement.deliveredUserIds && announcement.deliveredUserIds.length > 0) {
+      userFilter._id = { $nin: announcement.deliveredUserIds };
+    }
+
+    const pendingRecipients = await User.find(userFilter).select('_id');
+
+    if (pendingRecipients.length === 0) {
+      announcement.deliveryStatus = 'delivered';
+      announcement.failedCount = 0;
+      await announcement.save();
+      res.status(200).json({
+        success: true,
+        message: 'All recipients have already received this announcement.',
+        data: formatAnnouncementDto(announcement),
+      });
+      return;
+    }
+
+    // Reset failed count and re-trigger delivery via BullMQ
     announcement.deliveryStatus = 'processing';
     announcement.failedCount = 0;
     await announcement.save();
 
-    // Trigger batch delivery
-    setImmediate(() => {
-      deliverAnnouncementBatched(announcement._id).catch(() => {});
-    });
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < pendingRecipients.length; i += BATCH_SIZE) {
+      const batch = pendingRecipients.slice(i, i + BATCH_SIZE);
+      await queueService.enqueueAnnouncementBatch({
+        announcementId: announcement._id.toString(),
+        recipientUserIds: batch.map((u) => u._id.toString()),
+        title: announcement.title,
+        message: announcement.message,
+        batchIndex: Math.floor(i / BATCH_SIZE),
+      });
+    }
 
     res.status(200).json({
       success: true,

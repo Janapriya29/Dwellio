@@ -793,7 +793,9 @@ export type NotificationType =
   | 'REFUND_COMPLETED'
   | 'REFUND_FAILED'
   | 'PAYOUT_BATCH_GENERATED'
-  | 'PAYOUT_SETTLED';
+  | 'PAYOUT_SETTLED'
+  | 'BOOKING_REMINDER'
+  | 'NEW_MESSAGE';
 
 export interface NotificationData {
   id: string;
@@ -1062,3 +1064,114 @@ export interface UpdateCouponPayload {
 }
 
 
+
+// ==============================================================================
+// Phase 5: Real-Time Communication & Background Processing
+// ==============================================================================
+
+export type ConversationStatus = 'active' | 'archived' | 'locked';
+export type MessageSenderRole = 'customer' | 'provider' | 'admin' | 'system';
+
+export interface MessageSender {
+  id: string;
+  name: string;
+  role: MessageSenderRole;
+}
+
+export interface MessageRecipient {
+  id: string;
+  role: 'customer' | 'provider' | 'admin';
+}
+
+export interface MessageData {
+  id: string;
+  conversationId: string;
+  bookingId: string;
+  sender: MessageSender;
+  recipient?: MessageRecipient;
+  content: string;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface ConversationParticipant {
+  id: string;
+  name: string;
+  role: 'customer' | 'provider';
+}
+
+export interface ConversationData {
+  id: string;
+  bookingId: string;
+  customer: ConversationParticipant;
+  provider: ConversationParticipant;
+  status: ConversationStatus;
+  lastMessage?: MessageData;
+  unreadCountCustomer: number;
+  unreadCountProvider: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SendMessagePayload {
+  content: string;
+}
+
+export interface MarkMessagesReadPayload {
+  conversationId: string;
+}
+
+export interface UnreadCountResponseData {
+  totalUnread: number;
+  byBooking: Record<string, number>;
+}
+
+export interface ChatPaginationMeta {
+  total: number;
+  limit: number;
+  hasMore: boolean;
+  nextCursor?: string;
+}
+
+export interface BookingMessagesResponseData {
+  conversation: ConversationData;
+  messages: MessageData[];
+  pagination?: ChatPaginationMeta;
+}
+
+// Socket.IO Real-time Events
+export interface ClientToServerEvents {
+  join_booking: (data: { bookingId: string }) => void;
+  leave_booking: (data: { bookingId: string }) => void;
+  send_message: (data: { bookingId: string; content: string }) => void;
+  typing_start: (data: { bookingId: string }) => void;
+  typing_stop: (data: { bookingId: string }) => void;
+  mark_read: (data: { bookingId: string }) => void;
+}
+
+export interface ServerToClientEvents {
+  new_message: (message: MessageData) => void;
+  user_typing: (data: { bookingId: string; userId: string; role: MessageSenderRole }) => void;
+  user_stopped_typing: (data: { bookingId: string; userId: string }) => void;
+  messages_read: (data: { bookingId: string; readBy: string; readAt: string }) => void;
+  conversation_locked: (data: { bookingId: string; reason: string }) => void;
+  error: (data: { message: string; code?: string }) => void;
+}
+
+// Queue Monitoring & System Health (Phase 5D)
+export interface QueueMetrics {
+  name: string;
+  waiting: number;
+  active: number;
+  completed: number;
+  failed: number;
+  delayed: number;
+  paused: boolean;
+}
+
+export interface QueueSystemHealthData {
+  redisStatus: 'connected' | 'disconnected' | 'mock';
+  queues: Record<string, QueueMetrics>;
+  activeWorkers: number;
+  timestamp: string;
+}

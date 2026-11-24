@@ -13,6 +13,7 @@ import { AdminSettingsView } from './AdminSettingsView';
 import { AdminAuditLogsView } from './AdminAuditLogsView';
 import { AdminPayoutsView } from './AdminPayoutsView';
 import { AdminCouponsView } from './AdminCouponsView';
+import { AdminQueueHealthView } from './AdminQueueHealthView';
 
 export type AdminSubTab =
   | 'overview'
@@ -26,6 +27,7 @@ export type AdminSubTab =
   | 'coupons'
   | 'reviews'
   | 'announcements'
+  | 'queues'
   | 'settings'
   | 'audit-logs';
 
@@ -41,12 +43,13 @@ const SUB_TABS: { id: AdminSubTab; label: string; icon: string }[] = [
   { id: 'coupons', label: 'Coupons', icon: '🏷️' },
   { id: 'reviews', label: 'Reviews', icon: '⭐' },
   { id: 'announcements', label: 'Announcements', icon: '📢' },
+  { id: 'queues', label: 'Queues', icon: '⚡' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
   { id: 'audit-logs', label: 'Audit Trail', icon: '📜' },
 ];
 
 export const AdminDashboardLayout: React.FC = () => {
-  const { user, switchDemoRole } = useAuth();
+  const { user, token, switchDemoRole } = useAuth();
   const [activeSubTab, setActiveSubTab] = useState<AdminSubTab>('overview');
 
   // RBAC Access Guard: Ensure user has the 'admin' role
@@ -138,6 +141,7 @@ export const AdminDashboardLayout: React.FC = () => {
         {activeSubTab === 'coupons' && <AdminCouponsView />}
         {activeSubTab === 'reviews' && <AdminReviewsView />}
         {activeSubTab === 'announcements' && <AdminAnnouncementsView />}
+        {activeSubTab === 'queues' && <AdminQueueHealthView token={token || ''} />}
         {activeSubTab === 'settings' && <AdminSettingsView />}
         {activeSubTab === 'audit-logs' && <AdminAuditLogsView />}
       </main>

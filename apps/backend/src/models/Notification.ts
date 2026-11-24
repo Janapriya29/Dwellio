@@ -52,6 +52,8 @@ const notificationSchema = new Schema<INotification>(
         'REFUND_FAILED',
         'PAYOUT_BATCH_GENERATED',
         'PAYOUT_SETTLED',
+        'BOOKING_REMINDER',
+        'NEW_MESSAGE',
       ],
     },
     title: {

@@ -12,7 +12,7 @@ import { reviewRouter } from './routes/review';
 import { notificationRouter } from './routes/notification';
 import { paymentRouter } from './routes/payment';
 import { couponRouter } from './routes/coupon';
-import { financialBackgroundWorker } from './services/financialBackgroundWorker';
+import { chatRouter } from './routes/chat';
 import { generalApiRateLimiter } from './middleware/rateLimiter';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler';
 
@@ -65,11 +65,7 @@ export const createApp = (customRouter?: express.Router): Application => {
   app.use('/api', notificationRouter);
   app.use('/api', paymentRouter);
   app.use('/api', couponRouter);
-
-  // Initialize financial background worker for payment expiry and cleanup
-  if (config.nodeEnv !== 'test') {
-    financialBackgroundWorker.start();
-  }
+  app.use('/api', chatRouter);
 
   // Optional custom router (used for testing or modular route injection)
   if (customRouter) {

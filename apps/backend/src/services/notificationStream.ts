@@ -1,22 +1,79 @@
 import { Response } from 'express';
 import { NotificationData } from '@dwellio/shared';
+import { redisService } from './redisService';
+import { config } from '../config/env';
 
 const MAX_CONNECTIONS_PER_USER = 10;
 const HEARTBEAT_INTERVAL_MS = 25000; // 25 seconds
+const SSE_PUBSUB_CHANNEL = 'dwellio:notifications:stream';
 
 /**
  * Service to manage Server-Sent Events (SSE) connections for live notifications.
  *
- * Maintains an in-memory registry of active client responses partitioned by userId.
- * Note: For multi-container / horizontal cluster scale, an external event broker
- * (e.g. Redis Pub/Sub) would back this service.
+ * Maintains an in-memory registry of active client responses partitioned by userId,
+ * and uses Redis Pub/Sub to broadcast notifications across horizontal API replicas
+ * and background workers.
  */
 class NotificationStreamService {
   private activeConnections: Map<string, Set<Response>> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
+  public instanceId: string = 'sse_' + Math.random().toString(36).substring(2, 10);
+  private isSubscribed = false;
 
   constructor() {
     this.startHeartbeat();
+    this.initRedisPubSub();
+  }
+
+  /**
+   * Initializes Redis Pub/Sub subscription for horizontal cross-instance SSE broadcasting.
+   */
+  public initRedisPubSub(): void {
+    if (this.isSubscribed) return;
+
+    try {
+      const sub = redisService.getSubscriberClient();
+      if (!sub) return;
+
+      sub.subscribe(SSE_PUBSUB_CHANNEL, (err) => {
+        if (err && config.nodeEnv !== 'test') {
+          console.warn('[NotificationStream] SSE Redis Pub/Sub subscription warning:', err.message);
+        } else {
+          this.isSubscribed = true;
+        }
+      });
+
+      sub.on('message', (channel, message) => {
+        if (channel === SSE_PUBSUB_CHANNEL) {
+          this.handleRemoteMessage(message);
+        }
+      });
+    } catch (err: any) {
+      if (config.nodeEnv !== 'test') {
+        console.warn('[NotificationStream] Redis Pub/Sub unavailable, falling back to process-local SSE:', err.message);
+      }
+    }
+  }
+
+  /**
+   * Internal handler for incoming messages from Redis Pub/Sub channel.
+   * Avoids duplicate broadcasts to local clients that already received the local broadcast.
+   */
+  public handleRemoteMessage(rawPayload: string): boolean {
+    try {
+      const payload = JSON.parse(rawPayload);
+      if (payload && payload.userId && payload.notification) {
+        // Prevent duplicate broadcast if originated from this local instance
+        if (payload.originId === this.instanceId) {
+          return false;
+        }
+        this.broadcastLocally(payload.userId, payload.notification);
+        return true;
+      }
+    } catch {
+      // Safe isolation: ignore malformed remote messages
+    }
+    return false;
   }
 
   /**
@@ -84,28 +141,59 @@ class NotificationStreamService {
 
   /**
    * Broadcast a notification to all active connections belonging to a user.
+   * 1. Broadcasts to connections hosted on this local instance.
+   * 2. Publishes to Redis Pub/Sub channel so peer instances can deliver to their local connections.
    */
   public broadcastToUser(userId: string, notification: NotificationData): void {
     if (!userId || !notification) return;
 
+    // 1. Deliver to local connections immediately
+    this.broadcastLocally(userId, notification);
+
+    // 2. Publish to Redis Pub/Sub for peer instances
+    try {
+      const pubClient = redisService.getClient();
+      if (pubClient) {
+        pubClient.publish(
+          SSE_PUBSUB_CHANNEL,
+          JSON.stringify({
+            originId: this.instanceId,
+            userId,
+            notification,
+          })
+        ).catch(() => {});
+      }
+    } catch {
+      // Best-effort: failures to publish must not crash the process or rollback notifications
+    }
+  }
+
+  /**
+   * Writes the SSE event payload directly to all local connections for a user.
+   */
+  public broadcastLocally(userId: string, notification: NotificationData): number {
     const userConns = this.activeConnections.get(userId);
-    if (!userConns || userConns.size === 0) return;
+    if (!userConns || userConns.size === 0) return 0;
 
     const eventPayload = `id: ${notification.id}\nevent: notification\ndata: ${JSON.stringify(notification)}\n\n`;
+    let deliveredCount = 0;
 
     for (const res of userConns) {
       try {
         if (res.writable && !res.writableEnded) {
           res.write(eventPayload);
+          deliveredCount++;
         } else {
           // Dead connection cleanup
           this.removeClient(userId, res);
         }
-      } catch (err) {
+      } catch {
         // Safe isolation: write failure to one client must not affect others
         this.removeClient(userId, res);
       }
     }
+
+    return deliveredCount;
   }
 
   /**

@@ -176,9 +176,30 @@ npm test
 # Run deployment smoke test suite
 npm run test:e2e:smoke
 
+# Run comprehensive full user journey integration tests
+npm run test:e2e:journeys
+
+# Run real Redis & BullMQ integration tests (requires running Redis instance)
+npm run test:redis-integration
+
 # Run Playwright browser end-to-end tests (requires running frontend/stack)
 npm run test:e2e
 ```
+
+### Real Redis & BullMQ Integration Suite
+The test suite includes an opt-in integration suite (`tests/redis.bullmq.integration.test.ts`) that verifies genuine BullMQ Lua execution (`cmsgpack` engine), live Redis job scheduling, worker processing, and deduplication against a live Redis server.
+1. Start Redis:
+   ```bash
+   docker compose up redis -d
+   ```
+2. Run the integration test suite:
+   ```bash
+   npm run test:redis-integration
+   ```
+3. To configure a non-default host/port/auth:
+   ```bash
+   REDIS_TEST_URL="redis://:password@host:6379" npm run test:redis-integration
+   ```
 
 ---
 

@@ -7,6 +7,8 @@ import { createPaymentOrder, verifyPayment } from '../../services/paymentService
 import { openRazorpayCheckout } from '../../services/razorpay';
 import { ReviewModal } from './ReviewModal';
 import { RescheduleModal } from './RescheduleModal';
+import { BookingChatDrawer } from '../chat/BookingChatDrawer';
+import { getUnreadChatCount } from '../../services/chatService';
 
 interface MyBookingsViewProps {
   onExploreServices: () => void;
@@ -103,6 +105,8 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
   const [isProcessingPayment, setIsProcessingPayment] = useState<string | null>(null);
   const [paymentSuccessBanner, setPaymentSuccessBanner] = useState<string | null>(null);
   const [paymentErrorMessage, setPaymentErrorMessage] = useState<string | null>(null);
+  const [activeChatBooking, setActiveChatBooking] = useState<BookingData | null>(null);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
   const handlePayNow = async (booking: BookingData) => {
     if (!token) return;
@@ -211,6 +215,13 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
           })
           .catch(() => {});
       }
+
+      // Fetch unread chat message counts
+      getUnreadChatCount(token)
+        .then((res) => {
+          if (res?.byBooking) setUnreadCounts(res.byBooking);
+        })
+        .catch(() => {});
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load bookings.';
       setErrorMessage(msg);
@@ -640,25 +651,41 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
                 )}
 
                 {/* Actions */}
-                {(canCancel) && (
-                  <div className="pt-4 mt-4 border-t border-dwellio-mint/20 flex justify-end gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setReschedulingBooking(booking)}
-                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-sky-800 bg-sky-50 border border-sky-200 hover:bg-sky-100 transition flex items-center gap-1.5"
-                    >
-                      <span>🔄</span>
-                      <span>Reschedule</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCancellingBookingId(booking.id)}
-                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition"
-                    >
-                      Cancel Booking
-                    </button>
-                  </div>
-                )}
+                <div className="pt-4 mt-4 border-t border-dwellio-mint/20 flex flex-wrap items-center justify-between gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setActiveChatBooking(booking)}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition flex items-center gap-1.5"
+                  >
+                    <span>💬</span>
+                    <span>Chat with Pro</span>
+                    {unreadCounts[booking.id] > 0 && (
+                      <span className="px-1.5 py-0.5 bg-blue-600 text-white text-[10px] rounded-full font-bold">
+                        {unreadCounts[booking.id]}
+                      </span>
+                    )}
+                  </button>
+
+                  {canCancel && (
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setReschedulingBooking(booking)}
+                        className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-sky-800 bg-sky-50 border border-sky-200 hover:bg-sky-100 transition flex items-center gap-1.5"
+                      >
+                        <span>🔄</span>
+                        <span>Reschedule</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCancellingBookingId(booking.id)}
+                        className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition"
+                      >
+                        Cancel Booking
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -742,6 +769,25 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({ onExploreService
             </form>
           </div>
         </div>
+      )}
+
+      {/* Real-time Booking Chat Drawer (Milestone 5B) */}
+      {activeChatBooking && (
+        <BookingChatDrawer
+          isOpen={!!activeChatBooking}
+          onClose={() => {
+            setActiveChatBooking(null);
+            if (token) {
+              getUnreadChatCount(token).then((res) => setUnreadCounts(res.byBooking || {})).catch(() => {});
+            }
+          }}
+          bookingId={activeChatBooking.id}
+          token={token || ''}
+          currentUserId={user?.id || ''}
+          bookingTitle={activeChatBooking.service?.name || 'Home Service'}
+          counterpartName={activeChatBooking.provider?.displayName || 'Service Pro'}
+          counterpartRole="provider"
+        />
       )}
     </div>
   );
