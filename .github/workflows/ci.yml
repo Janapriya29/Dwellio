@@ -37,16 +37,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js 20 LTS
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: 'npm'
 
       - name: Install dependencies (clean install)
         run: npm ci
+
+      - name: Build shared package
+        run: npm run build:shared
 
       - name: Typecheck monorepo
         run: npm run typecheck

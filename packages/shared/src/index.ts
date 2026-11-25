@@ -104,6 +104,17 @@ export interface ProviderProfileData {
   updatedAt: string;
 }
 
+// Provider application item representation for Admin oversight
+export interface AdminProviderApplicationItem extends ProviderProfileData {
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    isActive: boolean;
+  };
+}
+
 export interface UpdateProviderProfilePayload {
   displayName?: string;
   phone?: string;

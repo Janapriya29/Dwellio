@@ -9,7 +9,7 @@ import {
 import { ProviderProfile } from '../models/ProviderProfile';
 import { sendInternalError } from '../utils/security';
 
-const VALID_SLOT_INDICES = STANDARD_TIME_SLOTS.map((s) => s.slotIndex); // [0, 1, 2, 3]
+const VALID_SLOT_INDICES: number[] = STANDARD_TIME_SLOTS.map((s) => s.slotIndex); // [0, 1, 2, 3]
 
 /**
  * Provider: Get operating schedule, blocked dates, and job acceptance status
@@ -105,7 +105,7 @@ export const updateMySchedule = async (req: Request, res: Response): Promise<voi
         }
       }
 
-      const uniqueSlots = Array.from(new Set(item.activeSlotIndices)).sort((a, b) => a - b);
+      const uniqueSlots: number[] = Array.from(new Set(item.activeSlotIndices)).sort((a: number, b: number) => a - b);
       cleanedSchedule.push({
         dayOfWeek: item.dayOfWeek,
         activeSlotIndices: uniqueSlots,

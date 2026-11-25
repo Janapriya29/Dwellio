@@ -4,6 +4,7 @@ import {
   AdminOverviewData,
   AdminAnalyticsData,
   ProviderProfileData,
+  AdminProviderApplicationItem,
   ProviderVerificationStatus,
   CategoryData,
   ServiceData,
@@ -35,15 +36,7 @@ const authHeaders = (token: string) => ({
   Authorization: `Bearer ${token}`,
 });
 
-export interface AdminProviderApplicationItem extends ProviderProfileData {
-  user?: {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-    isActive: boolean;
-  };
-}
+export type { AdminProviderApplicationItem };
 
 export interface PaginatedResponse<T> {
   items: T[];

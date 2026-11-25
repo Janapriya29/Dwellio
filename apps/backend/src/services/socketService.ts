@@ -127,7 +127,7 @@ export class SocketService {
       socket.join(`user:${userId}`);
 
       // 1. Join Booking Chat Room
-      socket.on('join_booking', async ({ bookingId }) => {
+      socket.on('join_booking', async ({ bookingId }: { bookingId: string }) => {
         try {
           if (!bookingId) return;
 
@@ -161,14 +161,14 @@ export class SocketService {
       });
 
       // 2. Leave Booking Chat Room
-      socket.on('leave_booking', ({ bookingId }) => {
+      socket.on('leave_booking', ({ bookingId }: { bookingId: string }) => {
         if (bookingId) {
           socket.leave(`booking:${bookingId}`);
         }
       });
 
       // 3. Typing Indicators
-      socket.on('typing_start', async ({ bookingId }) => {
+      socket.on('typing_start', async ({ bookingId }: { bookingId: string }) => {
         if (!bookingId) return;
         const authorized = await this.isAuthorizedParticipant(bookingId, userId, role);
         if (!authorized) {
@@ -183,7 +183,7 @@ export class SocketService {
         });
       });
 
-      socket.on('typing_stop', async ({ bookingId }) => {
+      socket.on('typing_stop', async ({ bookingId }: { bookingId: string }) => {
         if (!bookingId) return;
         const authorized = await this.isAuthorizedParticipant(bookingId, userId, role);
         if (!authorized) {
@@ -198,7 +198,7 @@ export class SocketService {
       });
 
       // 4. Send Message via Socket
-      socket.on('send_message', async ({ bookingId, content }) => {
+      socket.on('send_message', async ({ bookingId, content }: { bookingId: string; content: string }) => {
         try {
           if (!bookingId || !content || !content.trim()) {
             socket.emit('error', { message: 'Message content cannot be empty' });
@@ -316,7 +316,7 @@ export class SocketService {
       });
 
       // 5. Mark Messages Read via Socket
-      socket.on('mark_read', async ({ bookingId }) => {
+      socket.on('mark_read', async ({ bookingId }: { bookingId: string }) => {
         try {
           if (!bookingId) return;
 

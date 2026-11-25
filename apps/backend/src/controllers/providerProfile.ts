@@ -181,11 +181,11 @@ export const updateMyProviderProfile = async (req: Request, res: Response): Prom
         });
         return;
       }
-      const uniqueSkills = Array.from(
+      const uniqueSkills: string[] = Array.from(
         new Set(
           payload.skills
-            .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
-            .map((s) => s.trim().slice(0, 50))
+            .filter((s: string): s is string => typeof s === 'string' && s.trim().length > 0)
+            .map((s: string) => s.trim().slice(0, 50))
         )
       );
       profile.skills = uniqueSkills;

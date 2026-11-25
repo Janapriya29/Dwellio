@@ -15,7 +15,7 @@
     "build:shared": "npm run build --workspace=packages/shared",
     "build:backend": "npm run build --workspace=apps/backend",
     "build:frontend": "npm run build --workspace=apps/frontend",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run build:shared && npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspace=apps/backend && npm run test --workspace=apps/frontend",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "vitest run tests/e2e/smoke.test.ts",
