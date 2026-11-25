@@ -554,12 +554,14 @@ describe('Phase 8: Admin Dashboard & Platform Management Integration Tests', () 
 
   describe('6. Platform Audit Log Viewer (GET /api/admin/audit-logs)', () => {
     beforeEach(async () => {
+      const now = Date.now();
       await new AuditLog({
         adminId: adminUser._id,
         action: 'PROVIDER_APPLICATION_APPROVED',
         targetId: providerProfile._id,
         targetType: 'ProviderProfile',
         details: { applicantName: 'Karthik' },
+        createdAt: new Date(now - 10000),
       }).save();
 
       await new AuditLog({
@@ -568,6 +570,7 @@ describe('Phase 8: Admin Dashboard & Platform Management Integration Tests', () 
         targetId: testBooking._id,
         targetType: 'Review',
         details: { reason: 'Policy check' },
+        createdAt: new Date(now),
       }).save();
     });
 

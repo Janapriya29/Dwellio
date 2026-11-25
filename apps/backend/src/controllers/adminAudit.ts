@@ -42,7 +42,7 @@ export const listAuditLogs = async (req: Request, res: Response): Promise<void> 
     const totalPages = Math.ceil(total / limit) || 1;
 
     const rawLogs = await AuditLog.find(filter)
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1, _id: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .populate('adminId', 'name email');
